@@ -41,7 +41,7 @@
       <article class="upload-card">
         <div class="card-heading">
           <span class="step">01</span>
-          <div><h2>Import a website</h2><p>Use a static HTML website ZIP containing index.html.</p></div>
+          <div><h2>Import a website</h2><p>Upload a .zip (with index.html) or a single .html file.</p></div>
         </div>
         <form method="post" action="{% url 'builder:upload_project' %}" enctype="multipart/form-data" class="upload-form">
           {% csrf_token %}
@@ -51,11 +51,14 @@
             {% for error in form.name.errors %}<small class="error">{{ error }}</small>{% endfor %}
           </label>
           <label class="file-drop">
-            <span class="file-icon">ZIP</span>
-            <span><strong>Select website ZIP</strong><small>Maximum 25 MB for this local MVP</small></span>
+            <span class="file-icon">FILE</span>
+            <span><strong>Select ZIP or HTML</strong><small>Maximum 25 MB. Full sites need a ZIP with assets.</small></span>
             {{ form.website_zip }}
           </label>
           {% for error in form.website_zip.errors %}<small class="error">{{ error }}</small>{% endfor %}
+          {% if form.non_field_errors %}
+            {% for error in form.non_field_errors %}<small class="error">{{ error }}</small>{% endfor %}
+          {% endif %}
           <button type="submit" class="primary-btn">Import and open editor →</button>
         </form>
       </article>

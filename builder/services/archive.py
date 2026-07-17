@@ -109,16 +109,47 @@ def _local_stylesheets(html_text: str, entry_dir: Path, source_root: Path) -> li
     return result
 
 
+def _write_uploaded_bytes(uploaded_file, destination: Path) -> None:
+    with destination.open("wb") as target:
+        for chunk in uploaded_file.chunks():
+            target.write(chunk)
+
+
+def _import_single_html(uploaded_file, destination_project_dir: Path) -> ImportedWebsite:
+    """Accept a lone .html upload by packaging it as a one-file website ZIP."""
+    destination_project_dir.mkdir(parents=True, exist_ok=True)
+    source_dir = destination_project_dir / "source"
+    editor_dir = destination_project_dir / "editor"
+    editor_dir.mkdir(parents=True, exist_ok=True)
+    if source_dir.exists():
+        shutil.rmtree(source_dir)
+    source_dir.mkdir(parents=True, exist_ok=True)
+
+    entry_name = "index.html"
+    html_path = source_dir / entry_name
+    _write_uploaded_bytes(uploaded_file, html_path)
+
+    temp_zip = destination_project_dir / "original.zip"
+    with zipfile.ZipFile(temp_zip, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.write(html_path, entry_name)
+
+    html_text = html_path.read_text(encoding="utf-8", errors="replace")
+    stylesheets = _local_stylesheets(html_text, html_path.parent, source_dir)
+    return ImportedWebsite(entry_file=entry_name, stylesheet_files=stylesheets)
+
+
 def import_website_zip(uploaded_file, destination_project_dir: Path) -> ImportedWebsite:
+    uploaded_name = (getattr(uploaded_file, "name", "") or "").lower()
+    if uploaded_name.endswith((".html", ".htm")):
+        return _import_single_html(uploaded_file, destination_project_dir)
+
     destination_project_dir.mkdir(parents=True, exist_ok=True)
     source_dir = destination_project_dir / "source"
     editor_dir = destination_project_dir / "editor"
     editor_dir.mkdir(parents=True, exist_ok=True)
 
     temp_zip = destination_project_dir / "original.zip"
-    with temp_zip.open("wb") as target:
-        for chunk in uploaded_file.chunks():
-            target.write(chunk)
+    _write_uploaded_bytes(uploaded_file, temp_zip)
 
     with tempfile.TemporaryDirectory(prefix="siaw-editor-") as tmp:
         extracted = Path(tmp) / "extracted"

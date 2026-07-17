@@ -131,6 +131,22 @@ class UploadSecurityTests(TestCase):
         self.assertContains(response, "Unsafe path", status_code=400)
         self.assertFalse(WebsiteProject.objects.filter(name="Unsafe").exists())
 
+    def test_upload_accepts_single_html_file(self):
+        upload = SimpleUploadedFile(
+            "landing.html",
+            b"<!doctype html><html><body><h1>Hello</h1></body></html>",
+            content_type="text/html",
+        )
+        response = self.client.post(
+            reverse("builder:upload_project"),
+            {"name": "HTML Only", "website_zip": upload},
+        )
+        self.assertEqual(response.status_code, 302)
+        project = WebsiteProject.objects.get(name="HTML Only")
+        self.assertEqual(project.entry_file, "index.html")
+        self.assertTrue(project.entry_path.is_file())
+        self.assertIn("Hello", project.entry_path.read_text(encoding="utf-8"))
+
 class CompatibilityAndSmartManagerTests(TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()

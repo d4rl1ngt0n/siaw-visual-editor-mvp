@@ -8,15 +8,16 @@ class WebsiteUploadForm(forms.Form):
         widget=forms.TextInput(attrs={"placeholder": "e.g. Order Siaw Website"}),
     )
     website_zip = forms.FileField(
-        label="Website ZIP",
-        help_text="Upload a static HTML website ZIP containing index.html.",
-        widget=forms.ClearableFileInput(attrs={"accept": ".zip"}),
+        label="Website file",
+        help_text="Upload a .zip website (with index.html) or a single .html file.",
+        widget=forms.ClearableFileInput(attrs={"accept": ".zip,.html,.htm,application/zip,text/html"}),
     )
 
     def clean_website_zip(self):
         uploaded = self.cleaned_data["website_zip"]
-        if not uploaded.name.lower().endswith(".zip"):
-            raise forms.ValidationError("Please upload a .zip website file.")
+        name = uploaded.name.lower()
+        if not name.endswith((".zip", ".html", ".htm")):
+            raise forms.ValidationError("Please upload a .zip website or a .html file.")
         if uploaded.size > 25 * 1024 * 1024:
-            raise forms.ValidationError("The ZIP must be 25 MB or smaller for this MVP.")
+            raise forms.ValidationError("The file must be 25 MB or smaller for this MVP.")
         return uploaded
