@@ -9,7 +9,7 @@ class WebsiteUploadForm(forms.Form):
     )
     website_zip = forms.FileField(
         label="Website file",
-        help_text="Upload a .zip website (with index.html) or a single .html file.",
+        help_text="Upload a .zip website or a single .html file. Any HTML page can be the entry file.",
         widget=forms.ClearableFileInput(attrs={"accept": ".zip,.html,.htm,application/zip,text/html"}),
     )
 

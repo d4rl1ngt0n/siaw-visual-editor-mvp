@@ -75,18 +75,56 @@ def _validate_member(info: zipfile.ZipInfo) -> PurePosixPath:
     return path
 
 
-def _find_project_root(extracted_dir: Path) -> tuple[Path, Path]:
-    index_candidates = [
-        p for p in extracted_dir.rglob("*")
-        if p.is_file() and p.name.lower() in {"index.html", "index.htm"}
-    ]
-    if not index_candidates:
-        raise ValidationError("No index.html or index.htm file was found in the ZIP.")
+PREFERRED_ENTRY_NAMES = {
+    "index.html": 0,
+    "index.htm": 1,
+    "default.html": 2,
+    "default.htm": 3,
+    "home.html": 4,
+    "home.htm": 5,
+    "main.html": 6,
+    "main.htm": 7,
+    "app.html": 8,
+    "app.htm": 9,
+}
 
-    index_candidates.sort(key=lambda p: (len(p.relative_to(extracted_dir).parts), str(p)))
-    entry_path = index_candidates[0]
-    root = entry_path.parent
-    return root, entry_path
+
+def _is_ignored_extract_name(name: str) -> bool:
+    lowered = name.lower()
+    return lowered in {"__macosx", ".ds_store"} or lowered.startswith(".")
+
+
+def _detect_archive_root(extracted_dir: Path) -> Path:
+    """Use a single top-level folder as the site root when ZIP authors wrap the site."""
+    children = [
+        path for path in extracted_dir.iterdir()
+        if not _is_ignored_extract_name(path.name)
+    ]
+    if len(children) == 1 and children[0].is_dir():
+        return children[0]
+    return extracted_dir
+
+
+def _html_entry_sort_key(path: Path, root: Path) -> tuple:
+    relative = path.relative_to(root)
+    name = path.name.lower()
+    preferred = PREFERRED_ENTRY_NAMES.get(name, 100)
+    return (preferred, len(relative.parts), relative.as_posix().lower())
+
+
+def _find_project_root(extracted_dir: Path) -> tuple[Path, Path]:
+    root = _detect_archive_root(extracted_dir)
+    html_candidates = [
+        path for path in root.rglob("*")
+        if path.is_file()
+        and path.suffix.lower() in {".html", ".htm"}
+        and not any(_is_ignored_extract_name(part) for part in path.relative_to(root).parts)
+    ]
+    if not html_candidates:
+        raise ValidationError("No HTML file was found in the ZIP. Add any .html or .htm page and try again.")
+
+    html_candidates.sort(key=lambda path: _html_entry_sort_key(path, root))
+    return root, html_candidates[0]
 
 
 def _local_stylesheets(html_text: str, entry_dir: Path, source_root: Path) -> list[str]:
@@ -115,6 +153,13 @@ def _write_uploaded_bytes(uploaded_file, destination: Path) -> None:
             target.write(chunk)
 
 
+def _safe_html_filename(uploaded_name: str) -> str:
+    raw = Path(uploaded_name or "page.html").name
+    stem = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "-" for ch in Path(raw).stem).strip(".-_")
+    suffix = Path(raw).suffix.lower() if Path(raw).suffix.lower() in {".html", ".htm"} else ".html"
+    return f"{stem or 'page'}{suffix}"
+
+
 def _import_single_html(uploaded_file, destination_project_dir: Path) -> ImportedWebsite:
     """Accept a lone .html upload by packaging it as a one-file website ZIP."""
     destination_project_dir.mkdir(parents=True, exist_ok=True)
@@ -125,7 +170,7 @@ def _import_single_html(uploaded_file, destination_project_dir: Path) -> Importe
         shutil.rmtree(source_dir)
     source_dir.mkdir(parents=True, exist_ok=True)
 
-    entry_name = "index.html"
+    entry_name = _safe_html_filename(getattr(uploaded_file, "name", "") or "page.html")
     html_path = source_dir / entry_name
     _write_uploaded_bytes(uploaded_file, html_path)
 

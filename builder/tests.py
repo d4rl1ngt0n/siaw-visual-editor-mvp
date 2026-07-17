@@ -143,9 +143,27 @@ class UploadSecurityTests(TestCase):
         )
         self.assertEqual(response.status_code, 302)
         project = WebsiteProject.objects.get(name="HTML Only")
-        self.assertEqual(project.entry_file, "index.html")
+        self.assertEqual(project.entry_file, "landing.html")
         self.assertTrue(project.entry_path.is_file())
         self.assertIn("Hello", project.entry_path.read_text(encoding="utf-8"))
+
+    def test_upload_accepts_zip_without_index_html(self):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("site/home.html", "<!doctype html><html><body><h1>Home</h1></body></html>")
+            archive.writestr("site/about.html", "<!doctype html><html><body><h1>About</h1></body></html>")
+            archive.writestr("site/styles.css", "body{margin:0}")
+        upload = SimpleUploadedFile("no-index.zip", buffer.getvalue(), content_type="application/zip")
+        response = self.client.post(
+            reverse("builder:upload_project"),
+            {"name": "No Index", "website_zip": upload},
+        )
+        self.assertEqual(response.status_code, 302)
+        project = WebsiteProject.objects.get(name="No Index")
+        self.assertEqual(project.entry_file, "home.html")
+        self.assertTrue((project.source_dir / "styles.css").is_file())
+        self.assertTrue((project.source_dir / "about.html").is_file())
+        self.assertIn("Home", project.entry_path.read_text(encoding="utf-8"))
 
 class CompatibilityAndSmartManagerTests(TestCase):
     def setUp(self):

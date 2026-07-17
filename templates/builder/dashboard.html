@@ -41,7 +41,7 @@
       <article class="upload-card">
         <div class="card-heading">
           <span class="step">01</span>
-          <div><h2>Import a website</h2><p>Upload a .zip (with index.html) or a single .html file.</p></div>
+          <div><h2>Import a website</h2><p>Upload a .zip or a single .html file. Any HTML page works as the entry.</p></div>
         </div>
         <form method="post" action="{% url 'builder:upload_project' %}" enctype="multipart/form-data" class="upload-form">
           {% csrf_token %}
