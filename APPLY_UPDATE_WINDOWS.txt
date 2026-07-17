@@ -1,0 +1,24 @@
+SIAW VISUAL EDITOR MVP 4B | UPDATE EXISTING INSTALLATION
+
+1. In the black Command Prompt window, press Ctrl + C to stop the server.
+2. Extract siaw_visual_editor_mvp4b_update.zip.
+3. Copy these items from the update:
+   - builder
+   - static
+   - templates
+   - siaw_editor
+   - README.md
+   - UPDATE_NOTES_MVP4B.md
+   - APPLY_UPDATE_WINDOWS.txt
+4. Paste them into your existing siaw_visual_editor_mvp folder.
+5. Choose "Replace the files in the destination" when Windows asks.
+6. Do NOT delete or replace your existing db.sqlite3 or media folder.
+7. Restart with:
+   .venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
+8. Open http://127.0.0.1:8000/ and press Ctrl + F5 once.
+9. Open a project and test:
+   - Smart > Navigation Manager
+   - Interactive > Capture component
+   - Capture tab > Insert static copy / Add to Blocks
+
+NOTE: Interactive mode uses a local address ending in .runtime.localhost. This is normal and still runs only on your computer.

@@ -1,0 +1,24 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Preview | {{ project.name }}</title>
+  <link rel="stylesheet" href="{% static 'builder/preview.css' %}">
+</head>
+<body>
+  <header class="preview-bar">
+    <div><strong>{{ project.name }}</strong><span>Isolated live preview</span></div>
+    <div>
+      <a href="{% url 'builder:editor' project.id %}">Back to editor</a>
+      <a href="{% url 'builder:export_project' project.id %}" class="export">Export ZIP</a>
+    </div>
+  </header>
+  <iframe
+    title="{{ project.name }} live preview"
+    src="{{ preview_src }}"
+    sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-same-origin"
+  ></iframe>
+</body>
+</html>

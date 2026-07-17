@@ -1,0 +1,70 @@
+/* Editor-only helpers. This file is never added to the exported website. */
+.siaw-visual-edit-mode .service-animate .service-card,
+.siaw-visual-edit-mode .project-animate .image-card,
+.siaw-visual-edit-mode .process-animate .image-card,
+.siaw-visual-edit-mode .why-animate .why-card,
+.siaw-visual-edit-mode .product-animate .product-card,
+.siaw-visual-edit-mode .project-spotlight,
+.siaw-visual-edit-mode .shop-tools,
+.siaw-visual-edit-mode [data-reveal],
+.siaw-visual-edit-mode .reveal,
+.siaw-visual-edit-mode .fade-up {
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: none !important;
+  animation: none !important;
+  transition: none !important;
+}
+
+.siaw-visual-edit-mode .service-animate,
+.siaw-visual-edit-mode .project-animate,
+.siaw-visual-edit-mode .process-animate,
+.siaw-visual-edit-mode .why-animate,
+.siaw-visual-edit-mode .product-animate {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.siaw-editor-runtime-note {
+  grid-column: 1 / -1;
+  padding: 18px 20px;
+  border: 1px dashed #ff4545;
+  border-radius: 14px;
+  background: #fff7f7;
+  color: #5f1e1e;
+  font: 600 14px/1.5 Arial, sans-serif;
+}
+
+/* Generic compatibility guard for imported self-contained HTML files. */
+.siaw-visual-edit-mode img,
+.siaw-visual-edit-mode svg,
+.siaw-visual-edit-mode video,
+.siaw-visual-edit-mode canvas,
+.siaw-visual-edit-mode iframe {
+  max-width: 100%;
+}
+
+.siaw-visual-edit-mode img,
+.siaw-visual-edit-mode video {
+  height: auto;
+}
+
+/* MVP 4A universal animation visibility. Applied only in the editor canvas. */
+.siaw-visual-edit-mode .siaw-editor-force-visible,
+.siaw-visual-edit-mode .io-reveal,
+.siaw-visual-edit-mode [data-aos],
+.siaw-visual-edit-mode [data-scroll-reveal],
+.siaw-visual-edit-mode [data-animate-on-scroll] {
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: none !important;
+  animation: none !important;
+  transition: none !important;
+}
+
+.siaw-editor-runtime-note code {
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: rgba(95, 30, 30, .08);
+  font-size: .9em;
+}

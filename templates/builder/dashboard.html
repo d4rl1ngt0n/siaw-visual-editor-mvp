@@ -1,0 +1,93 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Siaw Visual Website Editor</title>
+  <link rel="stylesheet" href="{% static 'builder/dashboard.css' %}">
+</head>
+<body>
+  <header class="topbar">
+    <a href="{% url 'builder:dashboard' %}" class="brand">
+      <span class="brand-mark">S</span>
+      <span><strong>Siaw Visual Editor</strong><small>Edit HTML websites without touching code</small></span>
+    </a>
+    <span class="mvp-badge">MVP 4B</span>
+  </header>
+
+  <main class="page-shell">
+    {% if messages %}
+      <div class="messages">
+        {% for message in messages %}<div class="message {{ message.tags }}">{{ message }}</div>{% endfor %}
+      </div>
+    {% endif %}
+
+    <section class="hero-panel">
+      <div>
+        <p class="eyebrow">VISUAL HTML WEBSITE BUILDER</p>
+        <h1>Upload, click, edit and export.</h1>
+        <p class="lead">Import existing HTML websites, preserve their CSS and JavaScript, edit visually, and export a working ZIP. MVP 4B adds a Smart Navigation Manager and captures JavaScript-generated components as editable static blocks.</p>
+      </div>
+      <div class="feature-list">
+        <span>✓ Drag-and-drop blocks</span>
+        <span>✓ Text and image editing</span>
+        <span>✓ Desktop, tablet and mobile preview</span>
+        <span>✓ Smart navigation + component capture</span>
+      </div>
+    </section>
+
+    <section class="workspace-grid">
+      <article class="upload-card">
+        <div class="card-heading">
+          <span class="step">01</span>
+          <div><h2>Import a website</h2><p>Use a static HTML website ZIP containing index.html.</p></div>
+        </div>
+        <form method="post" action="{% url 'builder:upload_project' %}" enctype="multipart/form-data" class="upload-form">
+          {% csrf_token %}
+          <label>
+            <span>{{ form.name.label }}</span>
+            {{ form.name }}
+            {% for error in form.name.errors %}<small class="error">{{ error }}</small>{% endfor %}
+          </label>
+          <label class="file-drop">
+            <span class="file-icon">ZIP</span>
+            <span><strong>Select website ZIP</strong><small>Maximum 25 MB for this local MVP</small></span>
+            {{ form.website_zip }}
+          </label>
+          {% for error in form.website_zip.errors %}<small class="error">{{ error }}</small>{% endfor %}
+          <button type="submit" class="primary-btn">Import and open editor →</button>
+        </form>
+      </article>
+
+      <section class="projects-panel">
+        <div class="section-heading">
+          <div><p class="eyebrow">YOUR PROJECTS</p><h2>Continue editing</h2></div>
+          <span>{{ projects|length }} project{{ projects|length|pluralize }}</span>
+        </div>
+        <div class="project-list">
+          {% for project in projects %}
+            <article class="project-card">
+              <div class="project-preview"><span>HTML</span></div>
+              <div class="project-info">
+                <h3>{{ project.name }}</h3>
+                <p>{{ project.entry_file }}</p>
+                <small>Updated {{ project.updated_at|date:"d M Y, H:i" }}</small>
+              </div>
+              <div class="project-actions">
+                <a href="{% url 'builder:editor' project.id %}" class="open-btn">Open editor</a>
+                <a href="{% url 'builder:preview' project.id %}" target="_blank" class="text-btn">Preview</a>
+              </div>
+            </article>
+          {% empty %}
+            <div class="empty-state">
+              <strong>No website projects yet.</strong>
+              <p>Upload a static HTML website ZIP to create the first project.</p>
+            </div>
+          {% endfor %}
+        </div>
+      </section>
+    </section>
+  </main>
+</body>
+</html>
