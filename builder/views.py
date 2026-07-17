@@ -60,18 +60,27 @@ def _entry_directory(project: WebsiteProject) -> str:
     return "" if str(parent) == "." else parent.as_posix()
 
 
-def _isolated_runtime_url(request, project: WebsiteProject) -> str:
-    """Serve each imported website from its own localhost subdomain.
+def _uses_local_runtime_hosts(request) -> bool:
+    """Local browsers resolve *.localhost; production hosts need path-based runtime."""
+    host = request.get_host().split(":", 1)[0].lower()
+    return host in {"127.0.0.1", "localhost"} or host.endswith(".localhost")
 
-    This gives web applications a working origin for localStorage while keeping
-    their JavaScript away from the editor's cookies and DOM. Browsers resolve
-    *.localhost to the local machine without DNS configuration.
+
+def _isolated_runtime_url(request, project: WebsiteProject) -> str:
+    """Serve each imported website from an isolated runtime origin when possible.
+
+    Locally, each project uses a *.runtime.localhost subdomain so web apps get a
+    working origin for localStorage without sharing the editor cookies or DOM.
+    On deployed hosts without wildcard DNS, the same host is used with ?runtime=1.
     """
-    port = request.get_port()
-    host = f"{project.id}.runtime.localhost"
-    authority = f"{host}:{port}" if port else host
     version = int(project.updated_at.timestamp())
-    return f"{request.scheme}://{authority}{_file_url(project, project.entry_file)}?runtime=1&v={version}"
+    path = _file_url(project, project.entry_file)
+    if _uses_local_runtime_hosts(request):
+        port = request.get_port()
+        host = f"{project.id}.runtime.localhost"
+        authority = f"{host}:{port}" if port else host
+        return f"{request.scheme}://{authority}{path}?runtime=1&v={version}"
+    return request.build_absolute_uri(f"{path}?runtime=1&v={version}")
 
 
 @require_GET
@@ -383,7 +392,7 @@ def project_file(request, project_id, file_path):
     content_type = content_type or "application/octet-stream"
     request_host = request.get_host().split(":", 1)[0].lower()
     isolated_host = f"{project.id}.runtime.localhost"
-    isolated_runtime = request_host == isolated_host
+    isolated_runtime = request_host == isolated_host or request.GET.get("runtime") == "1"
 
     if isolated_runtime and target.resolve() == project.entry_path.resolve() and target.suffix.lower() in {".html", ".htm"}:
         html_text = target.read_text(encoding="utf-8", errors="replace")
