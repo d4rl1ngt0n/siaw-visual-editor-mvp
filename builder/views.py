@@ -23,7 +23,13 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from .forms import WebsiteUploadForm
 from .models import WebsiteProject
-from .services.archive import import_website_zip, safe_project_path
+from .services.archive import (
+    import_website_zip,
+    is_html_path,
+    is_text_path,
+    list_source_files,
+    safe_project_path,
+)
 from .services.compatibility import analyze_website
 from .services.navigation import apply_javascript_navigation, load_smart_navigation
 from .services.html_tools import (
@@ -108,7 +114,11 @@ def upload_project(request):
 
     project = WebsiteProject.objects.create(name=form.cleaned_data["name"])
     try:
-        imported = import_website_zip(form.cleaned_data["website_zip"], project.project_dir)
+        imported = import_website_zip(
+            form.cleaned_data["website_zip"],
+            project.project_dir,
+            preferred_entry=form.cleaned_data.get("entry_file") or None,
+        )
         project.entry_file = imported.entry_file
         project.stylesheet_files = imported.stylesheet_files
         project.save(update_fields=["entry_file", "stylesheet_files", "updated_at"])
@@ -134,11 +144,20 @@ def upload_project(request):
 @require_GET
 def editor(request, project_id):
     project = get_object_or_404(WebsiteProject, id=project_id)
+    visual_mode = is_html_path(project.entry_file)
     config = {
         "projectId": str(project.id),
         "projectName": project.name,
+        "entryFile": project.entry_file,
+        "editorMode": "visual" if visual_mode else "code",
         "dataUrl": reverse("builder:editor_data", args=[project.id]),
         "saveUrl": reverse("builder:save_project", args=[project.id]),
+        "filesUrl": reverse("builder:project_files", args=[project.id]),
+        "sourceFileUrlTemplate": reverse(
+            "builder:source_file",
+            kwargs={"project_id": project.id, "file_path": "__SIAW_PATH__"},
+        ),
+        "setEntryUrl": reverse("builder:set_entry_file", args=[project.id]),
         "assetUploadUrl": reverse("builder:upload_asset", args=[project.id]),
         "previewUrl": reverse("builder:preview", args=[project.id]),
         "runtimeUrl": _isolated_runtime_url(request, project),
@@ -154,6 +173,23 @@ def editor_data(request, project_id):
     project = get_object_or_404(WebsiteProject, id=project_id)
     if not project.entry_path.is_file():
         return JsonResponse({"error": "The project entry file is missing."}, status=404)
+
+    files = list_source_files(project.source_dir)
+    if not is_html_path(project.entry_file):
+        content = ""
+        if is_text_path(project.entry_file):
+            content = project.entry_path.read_text(encoding="utf-8", errors="replace")
+        return JsonResponse(
+            {
+                "mode": "code",
+                "entryFile": project.entry_file,
+                "content": content,
+                "files": files,
+                "runtimeUrl": _isolated_runtime_url(request, project),
+                "canVisualEdit": False,
+                "canPreview": False,
+            }
+        )
 
     html_text = project.entry_path.read_text(encoding="utf-8", errors="replace")
     editable_body, _scripts = extract_editable_body(html_text)
@@ -206,6 +242,7 @@ def editor_data(request, project_id):
     compatibility["hydratedLazyMediaCount"] = hydrated_lazy_media
 
     payload = {
+        "mode": "visual",
         "html": editable_body,
         "projectData": saved_project_data,
         "canvasStyles": canvas_styles,
@@ -214,14 +251,89 @@ def editor_data(request, project_id):
         "projectFilePrefix": prefix,
         "assets": assets,
         "entryFile": project.entry_file,
+        "files": files,
         "inlineStyles": document_context.inline_styles,
         "htmlAttributes": document_context.html_attributes,
         "bodyAttributes": document_context.body_attributes,
         "compatibility": compatibility,
         "smartServices": smart_services,
         "smartNavigation": smart_navigation,
+        "canVisualEdit": True,
+        "canPreview": True,
     }
     return JsonResponse(payload)
+
+
+@require_GET
+def project_files(request, project_id):
+    project = get_object_or_404(WebsiteProject, id=project_id)
+    return JsonResponse({"files": list_source_files(project.source_dir), "entryFile": project.entry_file})
+
+
+@require_http_methods(["GET", "POST"])
+def source_file(request, project_id, file_path):
+    project = get_object_or_404(WebsiteProject, id=project_id)
+    try:
+        target = safe_project_path(project.source_dir, file_path)
+    except FileNotFoundError as exc:
+        raise Http404 from exc
+    if not target.is_file():
+        raise Http404
+    if not is_text_path(target):
+        return JsonResponse({"error": "That file type can be exported, but not edited as text."}, status=400)
+
+    if request.method == "GET":
+        return JsonResponse(
+            {
+                "path": PurePosixPath(file_path).as_posix(),
+                "content": target.read_text(encoding="utf-8", errors="replace"),
+                "isHtml": is_html_path(target),
+            }
+        )
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"error": "Invalid file payload."}, status=400)
+    content = payload.get("content")
+    if not isinstance(content, str):
+        return JsonResponse({"error": "File content must be a string."}, status=400)
+    if len(content.encode("utf-8")) > 5 * 1024 * 1024:
+        return JsonResponse({"error": "File is too large to save in the editor."}, status=400)
+
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    temporary.write_text(content, encoding="utf-8")
+    os.replace(temporary, target)
+    project.save(update_fields=["updated_at"])
+    return JsonResponse({"ok": True, "path": PurePosixPath(file_path).as_posix()})
+
+
+@require_POST
+def set_entry_file(request, project_id):
+    project = get_object_or_404(WebsiteProject, id=project_id)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"error": "Invalid entry payload."}, status=400)
+    entry = str(payload.get("entryFile") or "").replace("\\", "/").lstrip("/")
+    if not entry or ".." in entry.split("/"):
+        return JsonResponse({"error": "Invalid entry file."}, status=400)
+    try:
+        target = safe_project_path(project.source_dir, entry)
+    except FileNotFoundError:
+        return JsonResponse({"error": "That file does not exist in the project."}, status=404)
+    if not target.is_file():
+        return JsonResponse({"error": "That file does not exist in the project."}, status=404)
+    project.entry_file = entry
+    project.save(update_fields=["entry_file", "updated_at"])
+    return JsonResponse(
+        {
+            "ok": True,
+            "entryFile": project.entry_file,
+            "editorMode": "visual" if is_html_path(project.entry_file) else "code",
+            "reload": True,
+        }
+    )
 
 
 @require_POST
@@ -231,6 +343,23 @@ def save_project(request, project_id):
         payload = json.loads(request.body.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JsonResponse({"error": "Invalid save data."}, status=400)
+
+    if payload.get("mode") == "code" or not is_html_path(project.entry_file):
+        content = payload.get("content")
+        path = str(payload.get("path") or project.entry_file).replace("\\", "/").lstrip("/")
+        if not isinstance(content, str):
+            return JsonResponse({"error": "Incomplete code editor data."}, status=400)
+        try:
+            target = safe_project_path(project.source_dir, path)
+        except FileNotFoundError:
+            return JsonResponse({"error": "File not found."}, status=404)
+        if not target.is_file() or not is_text_path(target):
+            return JsonResponse({"error": "That file cannot be saved as text."}, status=400)
+        temporary = target.with_suffix(target.suffix + ".tmp")
+        temporary.write_text(content, encoding="utf-8")
+        os.replace(temporary, target)
+        project.save(update_fields=["updated_at"])
+        return JsonResponse({"ok": True, "message": f"Saved {path}."})
 
     edited_html = payload.get("html")
     generated_css = payload.get("css", "")

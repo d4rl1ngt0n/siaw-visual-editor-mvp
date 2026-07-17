@@ -28,12 +28,12 @@
       <div>
         <p class="eyebrow">VISUAL HTML WEBSITE BUILDER</p>
         <h1>Upload, click, edit and export.</h1>
-        <p class="lead">Import existing HTML websites, preserve their CSS and JavaScript, edit visually, and export a working ZIP. MVP 4B adds a Smart Navigation Manager and captures JavaScript-generated components as editable static blocks.</p>
+        <p class="lead">Import folders, ZIP archives, or source files from static sites, Vite, Django, and other common web stacks. Edit HTML visually or open any project file in the code editor.</p>
       </div>
       <div class="feature-list">
-        <span>✓ Drag-and-drop blocks</span>
-        <span>✓ Text and image editing</span>
-        <span>✓ Desktop, tablet and mobile preview</span>
+        <span>✓ Folder, ZIP and file import</span>
+        <span>✓ HTML visual editing</span>
+        <span>✓ Source file code editing</span>
         <span>✓ Smart navigation + component capture</span>
       </div>
     </section>
@@ -42,20 +42,26 @@
       <article class="upload-card">
         <div class="card-heading">
           <span class="step">01</span>
-          <div><h2>Import a website</h2><p>Upload a .zip or a single .html file. Any HTML page works as the entry.</p></div>
+          <div><h2>Import a project</h2><p>Upload a folder, .zip, or a source/HTML file. HTML gets a live preview; other stacks open in the file editor.</p></div>
         </div>
         <form method="post" action="{% url 'builder:upload_project' %}" enctype="multipart/form-data" class="upload-form">
           {% csrf_token %}
+          {{ form.entry_file }}
           <label>
             <span>{{ form.name.label }}</span>
             {{ form.name }}
             {% for error in form.name.errors %}<small class="error">{{ error }}</small>{% endfor %}
           </label>
-          <label class="file-drop">
-            <span class="file-icon">FILE</span>
-            <span><strong>Select ZIP or HTML</strong><small>Maximum 25 MB. Full sites need a ZIP with assets.</small></span>
-            {{ form.website_zip }}
-          </label>
+
+          <div class="upload-pickers">
+            <label class="file-drop">
+              <span class="file-icon">FILE</span>
+              <span><strong>Select ZIP or file</strong><small>Maximum 25 MB after packing.</small></span>
+              {{ form.website_zip }}
+            </label>
+            <button type="button" class="folder-btn" data-pick-folder>Or choose folder</button>
+            <input type="file" data-folder-input webkitdirectory multiple hidden>
+          </div>
           {% for error in form.website_zip.errors %}<small class="error">{{ error }}</small>{% endfor %}
           {% if form.non_field_errors %}
             {% for error in form.non_field_errors %}<small class="error">{{ error }}</small>{% endfor %}
@@ -69,9 +75,10 @@
               </div>
               <button type="button" class="preview-clear" data-preview-clear>Clear</button>
             </div>
-            <div class="upload-preview-frame-wrap">
+            <div class="upload-preview-frame-wrap" data-preview-frame-wrap>
               <iframe class="upload-preview-frame" data-preview-frame title="Selected website preview" sandbox></iframe>
             </div>
+            <pre class="upload-preview-code" data-preview-code hidden></pre>
             <p class="upload-preview-status" data-preview-status></p>
             <ul class="upload-preview-files" data-preview-files></ul>
           </div>
@@ -88,7 +95,7 @@
         <div class="project-list">
           {% for project in projects %}
             <article class="project-card">
-              <div class="project-preview"><span>HTML</span></div>
+              <div class="project-preview"><span>WEB</span></div>
               <div class="project-info">
                 <h3>{{ project.name }}</h3>
                 <p>{{ project.entry_file }}</p>
@@ -102,7 +109,7 @@
           {% empty %}
             <div class="empty-state">
               <strong>No website projects yet.</strong>
-              <p>Upload a static HTML website ZIP to create the first project.</p>
+              <p>Upload a folder, ZIP, or source file to create the first project.</p>
             </div>
           {% endfor %}
         </div>

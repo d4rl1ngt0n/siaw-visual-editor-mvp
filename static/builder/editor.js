@@ -1154,7 +1154,147 @@
     }
   }
 
+  let codeMode = config.editorMode === "code";
+  let activeSourcePath = config.entryFile || "";
+  let codeEditorReady = false;
+  const codeEditorShell = document.getElementById("codeEditorShell");
+  const codeEditor = document.getElementById("codeEditor");
+  const codeEditorPath = document.getElementById("codeEditorPath");
+  const fileTree = document.getElementById("fileTree");
+
+  function sourceFileUrl(path) {
+    return config.sourceFileUrlTemplate.replace(
+      "__SIAW_PATH__",
+      String(path).split("/").map(encodeURIComponent).join("/"),
+    );
+  }
+
+  function isHtmlPath(path) {
+    return /\.(html|htm|xhtml|shtml)$/i.test(path || "");
+  }
+
+  function renderFileTree(files, activePath) {
+    if (!fileTree) return;
+    if (!files.length) {
+      fileTree.innerHTML = `<div class="smart-loading">No editable files found.</div>`;
+      return;
+    }
+    fileTree.innerHTML = "";
+    files.forEach((path) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "file-tree-item";
+      if (path === activePath) button.classList.add("is-active");
+      if (path === (loadedData?.entryFile || config.entryFile)) button.classList.add("is-entry");
+      button.textContent = path;
+      button.addEventListener("click", () => {
+        void openProjectFile(path);
+      });
+      fileTree.appendChild(button);
+    });
+  }
+
+  function showCodeEditor(path, content) {
+    codeMode = true;
+    activeSourcePath = path;
+    canvasArea?.classList.add("is-code");
+    if (codeEditorShell) codeEditorShell.hidden = false;
+    if (codeEditorPath) codeEditorPath.textContent = path;
+    if (codeEditor) codeEditor.value = content;
+    const titleSmall = document.querySelector(".project-title small");
+    if (titleSmall) titleSmall.textContent = path;
+    renderFileTree(loadedData?.files || [], path);
+  }
+
+  function showVisualEditorShell() {
+    codeMode = false;
+    canvasArea?.classList.remove("is-code");
+    if (codeEditorShell) codeEditorShell.hidden = true;
+  }
+
+  async function openProjectFile(path) {
+    if (dirty) {
+      const saved = await saveProject({ silent: true });
+      if (!saved) return;
+    }
+    if (isHtmlPath(path) && path !== (loadedData?.entryFile || config.entryFile)) {
+      const response = await fetch(config.setEntryUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken(),
+        },
+        body: JSON.stringify({ entryFile: path }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        window.alert(result.error || "Could not open that HTML file.");
+        return;
+      }
+      window.location.reload();
+      return;
+    }
+    if (isHtmlPath(path) && !codeMode && editor) {
+      activeSourcePath = path;
+      renderFileTree(loadedData?.files || [], path);
+      return;
+    }
+    const response = await fetch(sourceFileUrl(path), { headers: { Accept: "application/json" } });
+    const result = await response.json();
+    if (!response.ok) {
+      window.alert(result.error || "Could not open that file.");
+      return;
+    }
+    showCodeEditor(path, result.content || "");
+    dirty = false;
+    codeEditorReady = true;
+    editorReady = true;
+    setStatus("All changes saved", "saved");
+  }
+
   async function saveProject({ silent = false } = {}) {
+    if (codeMode) {
+      if (!codeEditorReady && !codeEditor) return false;
+      if (savingPromise) return savingPromise;
+      if (!dirty && silent) return true;
+      clearTimeout(autosaveTimer);
+      setStatus("Saving…", "saving");
+      saveBtn.disabled = true;
+      savingPromise = (async () => {
+        try {
+          const response = await fetch(config.saveUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRFToken": csrfToken(),
+            },
+            body: JSON.stringify({
+              mode: "code",
+              path: activeSourcePath,
+              content: codeEditor?.value || "",
+            }),
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || "The file could not be saved.");
+          dirty = false;
+          setStatus("Saved", "saved");
+          window.setTimeout(() => {
+            if (!dirty) setStatus("All changes saved", "saved");
+          }, 1200);
+          return true;
+        } catch (error) {
+          console.error(error);
+          setStatus("Save failed", "error");
+          if (!silent) window.alert(error.message);
+          return false;
+        } finally {
+          saveBtn.disabled = false;
+          savingPromise = null;
+        }
+      })();
+      return savingPromise;
+    }
+
     if (!editor || !editorReady) return false;
     if (savingPromise) return savingPromise;
     if (!dirty && silent) return true;
@@ -1290,6 +1430,31 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Project data could not be loaded.");
       loadedData = data;
+      renderFileTree(Array.isArray(data.files) ? data.files : [], data.entryFile || config.entryFile);
+
+      if (data.mode === "code" || config.editorMode === "code") {
+        showCodeEditor(data.entryFile || config.entryFile, data.content || "");
+        codeEditor?.addEventListener("input", () => {
+          dirty = true;
+          setStatus("Unsaved changes", "dirty");
+          clearTimeout(autosaveTimer);
+          autosaveTimer = setTimeout(() => saveProject({ silent: true }), 25000);
+        });
+        bindInterface();
+        if (previewBtn && data.canPreview === false) {
+          previewBtn.style.opacity = "0.45";
+          previewBtn.title = "Live preview needs an HTML entry file.";
+        }
+        if (safeModeBtn) safeModeBtn.disabled = true;
+        if (interactiveModeBtn) interactiveModeBtn.disabled = true;
+        codeEditorReady = true;
+        editorReady = true;
+        dirty = false;
+        setStatus("All changes saved", "saved");
+        return;
+      }
+
+      showVisualEditorShell();
       capturedComponents = Array.isArray(data.projectData?.siawCaptures) ? data.projectData.siawCaptures.slice(0, 30) : [];
 
       let editorRef = null;

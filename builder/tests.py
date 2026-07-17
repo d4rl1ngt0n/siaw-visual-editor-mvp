@@ -165,6 +165,52 @@ class UploadSecurityTests(TestCase):
         self.assertTrue((project.source_dir / "about.html").is_file())
         self.assertIn("Home", project.entry_path.read_text(encoding="utf-8"))
 
+    def test_upload_accepts_source_only_web_project(self):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("package.json", '{"name":"demo","private":true}')
+            archive.writestr("src/main.tsx", "export const App = () => <div>Hi</div>;")
+            archive.writestr("vite.config.ts", "export default {}")
+            archive.writestr("node_modules/ignore/index.js", "should be skipped")
+        upload = SimpleUploadedFile("vite-app.zip", buffer.getvalue(), content_type="application/zip")
+        response = self.client.post(
+            reverse("builder:upload_project"),
+            {"name": "Vite App", "website_zip": upload},
+        )
+        self.assertEqual(response.status_code, 302)
+        project = WebsiteProject.objects.get(name="Vite App")
+        self.assertEqual(project.entry_file, "src/main.tsx")
+        self.assertFalse((project.source_dir / "node_modules").exists())
+        data = self.client.get(reverse("builder:editor_data", args=[project.id]))
+        self.assertEqual(data.status_code, 200)
+        payload = data.json()
+        self.assertEqual(payload["mode"], "code")
+        self.assertIn("App", payload["content"])
+
+    def test_upload_detects_zip_bytes_even_with_html_filename(self):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr(
+                "3dnow_17 (1).html",
+                "<!doctype html><html><body><h1>3DNow</h1></body></html>",
+            )
+            archive.writestr("__MACOSX/._3dnow_17 (1).html", b"\x00\x05\x16\x07")
+        upload = SimpleUploadedFile(
+            "3dnow_17 (1).html",
+            buffer.getvalue(),
+            content_type="text/html",
+        )
+        response = self.client.post(
+            reverse("builder:upload_project"),
+            {"name": "Zip As Html", "website_zip": upload},
+        )
+        self.assertEqual(response.status_code, 302)
+        project = WebsiteProject.objects.get(name="Zip As Html")
+        self.assertEqual(project.entry_file, "3dnow_17 (1).html")
+        html = project.entry_path.read_text(encoding="utf-8")
+        self.assertIn("3DNow", html)
+        self.assertFalse(html.startswith("PK"))
+
 class CompatibilityAndSmartManagerTests(TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()

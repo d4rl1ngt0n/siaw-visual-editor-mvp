@@ -41,10 +41,15 @@
   <main class="editor-shell">
     <aside class="left-panel panel">
       <div class="panel-tabs">
-        <button class="panel-tab active" data-target="blocksPanel">Blocks</button>
+        <button class="panel-tab active" data-target="filesPanel">Files</button>
+        <button class="panel-tab" data-target="blocksPanel">Blocks</button>
         <button class="panel-tab" data-target="layersPanel">Layers</button>
       </div>
-      <div id="blocksPanel" class="panel-content active"><div id="blocks"></div></div>
+      <div id="filesPanel" class="panel-content active">
+        <div class="panel-intro"><strong>Project files</strong><span>Open any text file. HTML can use visual edit; other sources use the code editor.</span></div>
+        <div id="fileTree" class="file-tree"><div class="smart-loading">Loading files…</div></div>
+      </div>
+      <div id="blocksPanel" class="panel-content"><div id="blocks"></div></div>
       <div id="layersPanel" class="panel-content"><div id="layers"></div></div>
     </aside>
 
@@ -54,6 +59,13 @@
         <button type="button" aria-label="Close notice">×</button>
       </div>
       <div id="gjs"></div>
+      <div id="codeEditorShell" class="code-editor-shell" hidden>
+        <div class="code-editor-bar">
+          <strong id="codeEditorPath">source</strong>
+          <span id="codeEditorHint">Edit source files from Vite, Django, JS and other web projects.</span>
+        </div>
+        <textarea id="codeEditor" class="code-editor" spellcheck="false" aria-label="Source code editor"></textarea>
+      </div>
       <div id="interactiveMode" class="interactive-mode" hidden>
         <div class="interactive-banner"><strong>Interactive mode</strong><span>The website JavaScript is running inside an isolated project origin. Use this mode to inspect menus, carousels, reviews, filters and application screens.</span><button type="button" id="captureStartBtn" class="capture-start-btn">Capture component</button></div>
         <iframe id="interactiveFrame" title="Interactive website inspection" sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-same-origin"></iframe>
