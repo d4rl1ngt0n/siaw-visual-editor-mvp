@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Siaw Visual Website Editor</title>
   <link rel="stylesheet" href="{% static 'builder/dashboard.css' %}">
+  <script src="{% static 'builder/dashboard.js' %}" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -59,6 +60,22 @@
           {% if form.non_field_errors %}
             {% for error in form.non_field_errors %}<small class="error">{{ error }}</small>{% endfor %}
           {% endif %}
+
+          <div class="upload-preview" data-upload-preview hidden>
+            <div class="upload-preview-bar">
+              <div>
+                <p class="upload-preview-label">Ready to import</p>
+                <p class="upload-preview-meta" data-preview-meta></p>
+              </div>
+              <button type="button" class="preview-clear" data-preview-clear>Clear</button>
+            </div>
+            <div class="upload-preview-frame-wrap">
+              <iframe class="upload-preview-frame" data-preview-frame title="Selected website preview" sandbox></iframe>
+            </div>
+            <p class="upload-preview-status" data-preview-status></p>
+            <ul class="upload-preview-files" data-preview-files></ul>
+          </div>
+
           <button type="submit" class="primary-btn">Import and open editor →</button>
         </form>
       </article>
