@@ -71,15 +71,15 @@
               {% if generate_form.non_field_errors %}
                 {% for error in generate_form.non_field_errors %}<small class="error">{{ error }}</small>{% endfor %}
               {% endif %}
+              {% if ai_status.provider == "ollama" or ai_status.provider == "openai" %}
               <p class="ai-hint">
                 {% if ai_status.provider == "ollama" %}
                   Using free local <strong>Ollama</strong> (<code>{{ ai_status.model }}</code>). Large models generate full HTML; smaller ones fill a premium design engine. Keep Ollama running. Prefer <code>gpt-oss:120b</code> over <code>llama3.1:8b</code> for best quality.
-                {% elif ai_status.provider == "openai" %}
-                  Using <strong>OpenAI</strong> (<code>{{ ai_status.model }}</code>). For free local generation, run Ollama and set <code>SIAW_AI_PROVIDER=ollama</code>.
                 {% else %}
-                  Using the built-in design engine. For Claude-class local quality, run Ollama with a large model such as <code>gpt-oss:120b</code>.
+                  Using <strong>OpenAI</strong> (<code>{{ ai_status.model }}</code>). For free local generation, run Ollama and set <code>SIAW_AI_PROVIDER=ollama</code>.
                 {% endif %}
               </p>
+              {% endif %}
               <button type="submit" class="primary-btn" data-generate-submit>Generate and open editor →</button>
             </form>
           </div>
