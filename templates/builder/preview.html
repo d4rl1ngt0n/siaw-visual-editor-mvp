@@ -9,12 +9,29 @@
 </head>
 <body>
   <header class="preview-bar">
-    <div><strong>{{ project.name }}</strong><span>Isolated live preview</span></div>
     <div>
-      <a href="{% url 'builder:editor' project.id %}">Back to editor</a>
+      <strong>{{ project.name }}</strong>
+      <span>
+        {% if prefer_live %}
+          Live website preview{% if website_type %} · {{ website_type }}{% endif %}
+        {% else %}
+          Isolated live preview
+        {% endif %}
+        {% if entry_file %} · {{ entry_file }}{% endif %}
+      </span>
+    </div>
+    <div>
+      <a href="{% url 'builder:dashboard' %}">Dashboard</a>
+      <a href="{{ editor_href }}">{% if prefer_live %}Open editor (Interactive){% else %}Open editor{% endif %}</a>
       <a href="{% url 'builder:export_project' project.id %}" class="export">Export ZIP</a>
     </div>
   </header>
+  {% if prefer_live %}
+  <p class="preview-hint">
+    This is the built website running like a normal deploy. Safe Edit needs real HTML content, so use
+    <strong>Open editor (Interactive)</strong> and <strong>Capture this page</strong> when you want a visual snapshot.
+  </p>
+  {% endif %}
   <iframe
     title="{{ project.name }} live preview"
     src="{{ preview_src }}"

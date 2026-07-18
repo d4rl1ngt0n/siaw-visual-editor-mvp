@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import html
 import json
 import re
@@ -75,6 +76,447 @@ def hydrate_lazy_media(html_fragment: str) -> tuple[str, int]:
         return updated
 
     return LAZY_MEDIA_TAG_RE.sub(replace_tag, html_fragment), hydrated
+
+
+HERO_PHOTOS_RE = re.compile(r"\b(?:var|let|const)\s+HERO_PHOTOS\s*=\s*\[", re.IGNORECASE)
+REVIEWS_RE = re.compile(r"\b(?:var|let|const)\s+REVIEWS\s*=\s*\[", re.IGNORECASE)
+DATA_URL_RE = re.compile(
+    r"^data:(image/(?:png|jpeg|jpg|gif|webp|avif|svg\+xml));base64,(.+)$",
+    re.IGNORECASE | re.DOTALL,
+)
+EMPTY_HC_TRACK_RE = re.compile(
+    r'(<div\b[^>]*\bclass=["\'][^"\']*\bjs-hc-track\b[^"\']*["\'][^>]*>)\s*(</div>)',
+    re.IGNORECASE,
+)
+EMPTY_HC_DOTS_RE = re.compile(
+    r'(<div\b[^>]*\bclass=["\'][^"\']*\bjs-hc-dots\b[^"\']*["\'][^>]*>)\s*(</div>)',
+    re.IGNORECASE,
+)
+EMPTY_REVIEWS_TRACK_RE = re.compile(
+    r'(<div\b(?=[^>]*\bid=["\']reviewsTrack["\'])[^>]*>)\s*(</div>)',
+    re.IGNORECASE,
+)
+EMPTY_REVIEWS_DOTS_RE = re.compile(
+    r'(<div\b(?=[^>]*\bid=["\']reviewsDots["\'])[^>]*>)\s*(</div>)',
+    re.IGNORECASE,
+)
+HERO_FOREACH_RE = re.compile(r"HERO_PHOTOS\.forEach\s*\(", re.IGNORECASE)
+HERO_GUARD_MARKER = "/* siaw-hc-guard */"
+JS_STRING_RE = re.compile(r"""([\"'])((?:\\.|(?!\1).)*)\1""", re.DOTALL)
+
+
+def _balanced_bracket_slice(text: str, open_index: int) -> str | None:
+    if open_index < 0 or open_index >= len(text) or text[open_index] != "[":
+        return None
+    depth = 0
+    in_str = ""
+    escape = False
+    for index in range(open_index, len(text)):
+        char = text[index]
+        if in_str:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == in_str:
+                in_str = ""
+            continue
+        if char in {'"', "'", "`"}:
+            in_str = char
+            continue
+        if char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+            if depth == 0:
+                return text[open_index : index + 1]
+    return None
+
+
+def extract_hero_photos(html_text: str) -> list[dict[str, str]]:
+    """Parse HERO_PHOTOS = [{ src, alt_en, alt_de }, ...] from inline scripts."""
+    match = HERO_PHOTOS_RE.search(html_text)
+    if not match:
+        return []
+    open_index = html_text.find("[", match.start())
+    array_text = _balanced_bracket_slice(html_text, open_index)
+    if not array_text:
+        return []
+
+    photos: list[dict[str, str]] = []
+    for obj_match in re.finditer(r"\{([^{}]+)\}", array_text):
+        body = obj_match.group(1)
+        src_match = re.search(r"\bsrc\s*:\s*([\"'])(.*?)\1", body, re.DOTALL)
+        if not src_match:
+            continue
+        src = src_match.group(2).strip()
+        if not src:
+            continue
+        alt_en = ""
+        alt_de = ""
+        alt_en_match = re.search(r"\balt_en\s*:\s*([\"'])(.*?)\1", body, re.DOTALL)
+        alt_de_match = re.search(r"\balt_de\s*:\s*([\"'])(.*?)\1", body, re.DOTALL)
+        if alt_en_match:
+            alt_en = alt_en_match.group(2).strip()
+        if alt_de_match:
+            alt_de = alt_de_match.group(2).strip()
+        photos.append({"src": src, "alt": alt_en or alt_de, "alt_en": alt_en, "alt_de": alt_de})
+    return photos
+
+
+def _extension_for_mime(mime: str) -> str:
+    mapping = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+        "image/avif": ".avif",
+        "image/svg+xml": ".svg",
+    }
+    return mapping.get(mime.lower(), ".bin")
+
+
+def materialize_hero_photo_files(source_root: Path, photos: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Write data-URL hero photos into source/siaw-hydrated/ and return path-based photos."""
+    if not photos:
+        return []
+    out_dir = source_root / "siaw-hydrated"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    materialized: list[dict[str, str]] = []
+    for index, photo in enumerate(photos):
+        src = photo.get("src") or ""
+        data_match = DATA_URL_RE.match(src)
+        if data_match:
+            mime = data_match.group(1)
+            try:
+                raw = base64.b64decode(data_match.group(2), validate=False)
+            except Exception:
+                materialized.append(photo)
+                continue
+            relative = f"siaw-hydrated/hero-{index}{_extension_for_mime(mime)}"
+            target = source_root / relative
+            if not target.is_file() or target.stat().st_size != len(raw):
+                target.write_bytes(raw)
+            next_photo = dict(photo)
+            next_photo["src"] = relative
+            materialized.append(next_photo)
+        else:
+            materialized.append(photo)
+    return materialized
+
+
+def hydrate_js_hero_carousel(editable_body: str, photos: list[dict[str, str]]) -> tuple[str, int]:
+    """Fill empty .js-hc-track / .js-hc-dots from HERO_PHOTOS for Safe Edit."""
+    if not photos:
+        return editable_body, 0
+    track_match = EMPTY_HC_TRACK_RE.search(editable_body)
+    if not track_match:
+        return editable_body, 0
+
+    slides_html = []
+    dots_html = []
+    for index, photo in enumerate(photos):
+        src = html.escape(photo["src"], quote=True)
+        alt = html.escape(photo.get("alt") or f"Slide {index + 1}", quote=True)
+        active = " is-active" if index == 0 else ""
+        slides_html.append(
+            f'<div class="hc-slide{active}" data-siaw-hydrated="hero-carousel" data-siaw-slideshow-slide="true">'
+            f'<img src="{src}" alt="{alt}" draggable="false" decoding="async" '
+            f'loading="{"eager" if index == 0 else "lazy"}">'
+            f"</div>"
+        )
+        aria_current = ' aria-current="true"' if index == 0 else ""
+        dots_html.append(
+            f'<button type="button" class="hc-dot{active}" data-siaw-hydrated="hero-carousel"{aria_current}></button>'
+        )
+
+    def fill_track(match: re.Match[str]) -> str:
+        opening = match.group(1)
+        if "data-siaw-slideshow=" not in opening:
+            opening = opening[:-1] + ' data-siaw-slideshow="hero">'
+        return f"{opening}{''.join(slides_html)}{match.group(2)}"
+
+    updated = EMPTY_HC_TRACK_RE.sub(fill_track, editable_body, count=1)
+    if EMPTY_HC_DOTS_RE.search(updated):
+        updated = EMPTY_HC_DOTS_RE.sub(
+            lambda match: f"{match.group(1)}{''.join(dots_html)}{match.group(2)}",
+            updated,
+            count=1,
+        )
+    return updated, len(photos)
+
+
+def guard_hero_carousel_script(html_text: str) -> str:
+    """Skip rebuilding slides when Safe Edit already hydrated .js-hc-track."""
+    if HERO_GUARD_MARKER in html_text or not HERO_FOREACH_RE.search(html_text):
+        return html_text
+    replacement = (
+        f"{HERO_GUARD_MARKER}\n"
+        "    if (track && track.querySelector('.hc-slide')) {\n"
+        "      slides = Array.from(track.querySelectorAll('.hc-slide'));\n"
+        "      if (dotsWrap) {\n"
+        "        dots = Array.from(dotsWrap.querySelectorAll('.hc-dot'));\n"
+        "        dots.forEach(function(d, i){\n"
+        "          (function(k){ d.addEventListener('click', function(){ go(k); restart(); }); })(i);\n"
+        "        });\n"
+        "      }\n"
+        "    } else HERO_PHOTOS.forEach("
+    )
+    return HERO_FOREACH_RE.sub(replacement, html_text, count=1)
+
+
+def _js_string_value(raw: str) -> str:
+    try:
+        return json.loads(f'"{raw}"')
+    except json.JSONDecodeError:
+        return (
+            raw.replace(r"\\", "\\")
+            .replace(r"\"", '"')
+            .replace(r"\'", "'")
+            .replace(r"\n", "\n")
+            .replace(r"\t", "\t")
+        )
+
+
+def _prop_string(body: str, name: str) -> str:
+    match = re.search(rf"\b{re.escape(name)}\s*:\s*", body)
+    if not match:
+        return ""
+    rest = body[match.end() :]
+    string_match = JS_STRING_RE.match(rest.lstrip())
+    if not string_match:
+        return ""
+    return _js_string_value(string_match.group(2))
+
+
+def extract_reviews(html_text: str) -> list[dict[str, Any]]:
+    """Parse REVIEWS = [{ name, stars, text }, ...] from inline scripts."""
+    match = REVIEWS_RE.search(html_text)
+    if not match:
+        return []
+    open_index = html_text.find("[", match.start())
+    array_text = _balanced_bracket_slice(html_text, open_index)
+    if not array_text:
+        return []
+
+    reviews: list[dict[str, Any]] = []
+    for obj_match in re.finditer(r"\{([^{}]+)\}", array_text):
+        body = obj_match.group(1)
+        name = _prop_string(body, "name")
+        text_value = _prop_string(body, "text")
+        stars_match = re.search(r"\bstars\s*:\s*(\d+)", body)
+        if not name and not text_value:
+            continue
+        reviews.append(
+            {
+                "name": name or "Customer",
+                "stars": int(stars_match.group(1)) if stars_match else 5,
+                "text": text_value,
+            }
+        )
+    return reviews
+
+
+def hydrate_js_reviews(editable_body: str, reviews: list[dict[str, Any]]) -> tuple[str, int]:
+    """Fill empty #reviewsTrack / #reviewsDots from REVIEWS for Safe Edit."""
+    if not reviews:
+        return editable_body, 0
+    if not EMPTY_REVIEWS_TRACK_RE.search(editable_body):
+        return editable_body, 0
+
+    cards_html: list[str] = []
+    for review in reviews:
+        stars = max(0, min(5, int(review.get("stars") or 5)))
+        star_text = ("★" * stars) + ("☆" * (5 - stars))
+        text_value = str(review.get("text") or "")
+        is_long = len(text_value) > 170
+        clamp_class = " clamp" if is_long else ""
+        cards_html.append(
+            '<div class="review" data-siaw-hydrated="reviews">'
+            f'<div class="review-stars">{html.escape(star_text)}</div>'
+            f'<p class="review-text{clamp_class}">{html.escape(text_value)}</p>'
+            + (
+                '<button type="button" class="readmore-btn" data-siaw-hydrated="reviews">Read more</button>'
+                if is_long
+                else ""
+            )
+            + '<div class="review-foot">'
+            f'<div class="review-name">{html.escape(str(review.get("name") or "Customer"))}</div>'
+            "</div></div>"
+        )
+
+    updated = EMPTY_REVIEWS_TRACK_RE.sub(
+        lambda match: f"{match.group(1)}{''.join(cards_html)}{match.group(2)}",
+        editable_body,
+        count=1,
+    )
+    # One editable dot per review page group (approx 3-up). Live Preview rebuilds real dots.
+    page_count = max(1, (len(reviews) + 2) // 3)
+    dots_html = "".join(
+        f'<button type="button" class="rc-dot{" active" if index == 0 else ""}" '
+        f'data-siaw-hydrated="reviews" aria-label="Review group {index + 1}"></button>'
+        for index in range(page_count)
+    )
+    if EMPTY_REVIEWS_DOTS_RE.search(updated):
+        updated = EMPTY_REVIEWS_DOTS_RE.sub(
+            lambda match: f"{match.group(1)}{dots_html}{match.group(2)}",
+            updated,
+            count=1,
+        )
+    return updated, len(reviews)
+
+
+def _replace_js_array_literal(html_text: str, declaration_re: re.Pattern[str], literal: str) -> str | None:
+    match = declaration_re.search(html_text)
+    if not match:
+        return None
+    open_index = html_text.find("[", match.start())
+    old = _balanced_bracket_slice(html_text, open_index)
+    if not old:
+        return None
+    return html_text[:open_index] + literal + html_text[open_index + len(old) :]
+
+
+def _hero_photos_literal(photos: list[dict[str, str]]) -> str:
+    lines = ["["]
+    for photo in photos:
+        src = json.dumps(photo.get("src") or "", ensure_ascii=False)
+        alt_en = json.dumps(photo.get("alt_en") or photo.get("alt") or "", ensure_ascii=False)
+        alt_de = json.dumps(photo.get("alt_de") or photo.get("alt") or "", ensure_ascii=False)
+        lines.append(f"    {{ src: {src}, alt_en: {alt_en}, alt_de: {alt_de} }},")
+    lines.append("  ]")
+    return "\n".join(lines)
+
+
+def _reviews_literal(reviews: list[dict[str, Any]]) -> str:
+    lines = ["["]
+    for review in reviews:
+        name = json.dumps(str(review.get("name") or "Customer"), ensure_ascii=False)
+        text_value = json.dumps(str(review.get("text") or ""), ensure_ascii=False)
+        stars = max(0, min(5, int(review.get("stars") or 5)))
+        lines.append(f"    {{ name: {name}, stars: {stars}, text: {text_value} }},")
+    lines.append("  ]")
+    return "\n".join(lines)
+
+
+def _parse_attrs(tag_attrs: str) -> dict[str, str]:
+    return {name.lower(): value for name, _quote, value in ATTRIBUTE_RE.findall(tag_attrs)}
+
+
+def extract_hydrated_hero_slides(edited_html: str) -> list[dict[str, str]]:
+    slides: list[dict[str, str]] = []
+    pattern = re.compile(
+        r"<div\b(?=[^>]*(?:\bhc-slide\b|data-siaw-slideshow-slide\s*=))[^>]*>\s*<img\b([^>]*)>",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for match in pattern.finditer(edited_html or ""):
+        attrs = _parse_attrs(match.group(1))
+        src = (attrs.get("src") or "").strip()
+        if not src:
+            continue
+        alt = (attrs.get("alt") or "").strip()
+        slides.append({"src": src, "alt": alt, "alt_en": alt, "alt_de": alt})
+    return slides
+
+
+def normalize_slideshow_photos(photos: Any) -> list[dict[str, str]]:
+    """Normalize an explicit slideshow payload from the Safe Edit client."""
+    slides: list[dict[str, str]] = []
+    if not isinstance(photos, list):
+        return slides
+    for item in photos:
+        if not isinstance(item, dict):
+            continue
+        src = str(item.get("src") or "").strip()
+        if not src:
+            continue
+        alt = str(item.get("alt") or item.get("alt_en") or "").strip()
+        alt_en = str(item.get("alt_en") or alt).strip()
+        alt_de = str(item.get("alt_de") or alt).strip()
+        slides.append(
+            {
+                "src": src,
+                "alt": alt or alt_en,
+                "alt_en": alt_en or alt,
+                "alt_de": alt_de or alt or alt_en,
+            }
+        )
+    return slides
+
+
+def extract_hydrated_reviews(edited_html: str) -> list[dict[str, Any]]:
+    track_match = re.search(
+        r'<div\b(?=[^>]*\bid=["\']reviewsTrack["\'])[^>]*>(.*)',
+        edited_html,
+        re.IGNORECASE | re.DOTALL,
+    )
+    region = track_match.group(1) if track_match else edited_html
+    dots_cut = re.search(r'<div\b(?=[^>]*\bid=["\']reviewsDots["\'])', region, re.I)
+    if dots_cut:
+        region = region[: dots_cut.start()]
+
+    reviews: list[dict[str, Any]] = []
+    parts = re.split(r'(?=<div\b[^>]*\bclass=["\'][^"\']*\breview\b)', region, flags=re.I)
+    for part in parts:
+        if not re.search(r'\bclass=["\'][^"\']*\breview\b', part, re.I):
+            continue
+        stars_match = re.search(r'class=["\'][^"\']*\breview-stars\b[^"\']*["\'][^>]*>(.*?)</div>', part, re.I | re.S)
+        text_match = re.search(r'class=["\'][^"\']*\breview-text\b[^"\']*["\'][^>]*>(.*?)</p>', part, re.I | re.S)
+        name_match = re.search(r'class=["\'][^"\']*\breview-name\b[^"\']*["\'][^>]*>(.*?)</div>', part, re.I | re.S)
+        if not text_match and not name_match:
+            continue
+        stars_text = re.sub(r"<[^>]+>", "", stars_match.group(1) if stars_match else "")
+        stars = stars_text.count("★") or 5
+        text_value = html.unescape(re.sub(r"<[^>]+>", "", text_match.group(1) if text_match else "")).strip()
+        name = html.unescape(re.sub(r"<[^>]+>", "", name_match.group(1) if name_match else "")).strip()
+        reviews.append({"name": name or "Customer", "stars": stars, "text": text_value})
+    return reviews
+
+
+def sync_js_interactive_arrays(
+    html_text: str,
+    edited_body: str,
+    slideshow_photos: list[dict[str, str]] | None = None,
+) -> tuple[str, list[str]]:
+    """Write Safe Edit changes for hydrated carousels/reviews back into JS data arrays."""
+    updated = html_text
+    synced: list[str] = []
+
+    if slideshow_photos is not None:
+        slides = list(slideshow_photos)
+    else:
+        slides = extract_hydrated_hero_slides(edited_body)
+    slideshow_managed = bool(
+        slideshow_photos is not None
+        or slides
+        or re.search(r'data-siaw-slideshow=["\']hero["\']', edited_body, re.I)
+        or re.search(r'data-siaw-slideshow-slide=["\']true["\']', edited_body, re.I)
+    )
+    if slideshow_managed:
+        # Preserve German alts when indexes still match the previous array.
+        previous = extract_hero_photos(updated)
+        for index, slide in enumerate(slides):
+            if index < len(previous):
+                if not slide.get("alt_de"):
+                    slide["alt_de"] = previous[index].get("alt_de") or previous[index].get("alt") or slide.get("alt") or ""
+                if previous[index].get("alt_en") and slide.get("alt") == previous[index].get("alt"):
+                    slide["alt_en"] = previous[index].get("alt_en") or slide.get("alt") or ""
+                elif not slide.get("alt_en"):
+                    slide["alt_en"] = slide.get("alt") or previous[index].get("alt_en") or ""
+        replaced = _replace_js_array_literal(updated, HERO_PHOTOS_RE, _hero_photos_literal(slides))
+        if replaced is not None:
+            updated = replaced
+            synced.append(f"Hero slideshow ({len(slides)} slides)")
+
+    reviews = extract_hydrated_reviews(edited_body)
+    if reviews:
+        replaced = _replace_js_array_literal(updated, REVIEWS_RE, _reviews_literal(reviews))
+        if replaced is not None:
+            updated = replaced
+            synced.append(f"Reviews ({len(reviews)} cards)")
+
+    return updated, synced
 
 
 class _AttributeParser(HTMLParser):

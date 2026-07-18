@@ -7,6 +7,8 @@ from pathlib import Path, PurePosixPath
 from typing import Iterable
 from urllib.parse import unquote, urlsplit
 
+from .support_profile import support_profile_payload
+
 STYLE_RE = re.compile(r"<style\b[^>]*>(.*?)</style\s*>", re.IGNORECASE | re.DOTALL)
 SCRIPT_BLOCK_RE = re.compile(r"<script\b([^>]*)>(.*?)</script\s*>", re.IGNORECASE | re.DOTALL)
 CSS_URL_RE = re.compile(r"url\(\s*(['\"]?)(.*?)\1\s*\)", re.IGNORECASE | re.DOTALL)
@@ -19,6 +21,10 @@ DYNAMIC_OPERATION_RE = re.compile(
 )
 LOCAL_STORAGE_RE = re.compile(r"\b(?:localStorage|sessionStorage)\b")
 ARRAY_DATA_RE = re.compile(r"\b(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*\[")
+HASH_ROUTE_RE = re.compile(r"""['"]#/[^'"]+['"]|location\.hash|hashchange""")
+MODULE_SCRIPT_RE = re.compile(r"""<script\b[^>]*\btype\s*=\s*['"]module['"]""", re.I)
+SPA_MOUNT_IDS = {"main", "app", "root", "app-root", "__next", "outlet", "siaw-root"}
+BUILD_OUTPUT_DIRS = {"dist", "build", "out", "output"}
 REVEAL_NAME_RE = re.compile(r"(?:reveal|animate|animation|fade|slide|scroll|appear|inview|in-view|aos)", re.I)
 HIDDEN_DECL_RE = re.compile(
     r"(?:opacity\s*:\s*0(?:\D|$)|visibility\s*:\s*hidden|transform\s*:\s*(?:translate|scale))",
@@ -175,7 +181,12 @@ def _read_local_text(source_root: Path, entry_file: str, references: Iterable[st
         target = _resolve_reference(source_root, entry_file, reference)
         if target and target.is_file():
             try:
-                result.append((target.relative_to(source_root).as_posix(), target.read_text(encoding="utf-8", errors="replace")))
+                result.append(
+                    (
+                        target.resolve().relative_to(source_root.resolve()).as_posix(),
+                        target.read_text(encoding="utf-8", errors="replace"),
+                    )
+                )
             except OSError:
                 continue
     return result
@@ -239,6 +250,78 @@ def _missing_resources(
     return missing[:100]
 
 
+def detect_spa_shell(
+    parser: CompatibilityHTMLParser,
+    all_script_text: str,
+    inline_script_chars: int,
+    *,
+    html_text: str = "",
+    linked_script_count: int = 0,
+    entry_file: str = "",
+) -> dict:
+    """Detect JS apps where the visible page is rendered into empty mount points."""
+    empty_mounts = []
+    for element_id, element in parser.elements_by_id.items():
+        if element_id.lower() in SPA_MOUNT_IDS and element.empty:
+            empty_mounts.append(f"#{element_id}")
+
+    hash_routes = bool(HASH_ROUTE_RE.search(all_script_text))
+    dynamic_ops = len(DYNAMIC_OPERATION_RE.findall(all_script_text))
+    large_inline_script = inline_script_chars >= 40_000
+    module_scripts = bool(MODULE_SCRIPT_RE.search(html_text or ""))
+    entry_parts = {part.lower() for part in PurePosixPath(entry_file or "").parts}
+    built_output_entry = bool(entry_parts & BUILD_OUTPUT_DIRS)
+
+    # Vite/React/etc. dist shells often only have <div id="root"> + <script type="module">.
+    # Do not require scanning huge bundled JS for DOM APIs.
+    client_app_signals = (
+        hash_routes
+        or dynamic_ops >= 8
+        or large_inline_script
+        or module_scripts
+        or (bool(empty_mounts) and linked_script_count >= 1)
+        or (bool(empty_mounts) and built_output_entry)
+    )
+    is_spa = bool(empty_mounts) and client_app_signals
+
+    reasons = []
+    if empty_mounts:
+        reasons.append("Empty mount point(s): " + ", ".join(empty_mounts[:4]))
+    if hash_routes:
+        reasons.append("Hash-based client routing detected")
+    if dynamic_ops >= 8:
+        reasons.append("Heavy DOM generation via JavaScript")
+    if large_inline_script:
+        reasons.append("Large inline application script")
+    if module_scripts:
+        reasons.append("ES module app bootstrap detected")
+    if built_output_entry and empty_mounts:
+        reasons.append("Built output folder entry (dist/build/out) with empty mount")
+
+    return {
+        "isSpaShell": is_spa,
+        "emptyMounts": empty_mounts[:8],
+        "hashRouting": hash_routes,
+        "reasons": reasons,
+        "guidance": (
+            "This site is a JS app shell. Use Live Preview or Interactive mode to see the real UI. "
+            "Capture this page when you want a static HTML snapshot for Safe Edit."
+            if is_spa
+            else ""
+        ),
+    }
+
+
+def _has_editable_static_content(parser: CompatibilityHTMLParser, spa: dict, direct_editable: int) -> bool:
+    if spa.get("isSpaShell"):
+        return False
+    content_tags = sum(
+        parser.tags.get(tag, 0)
+        for tag in ("h1", "h2", "h3", "h4", "h5", "p", "a", "button", "img", "li", "section", "article")
+    )
+    return content_tags >= 6 or direct_editable >= 8
+
+
 def analyze_website(source_root: Path, entry_file: str, html_text: str) -> dict:
     parser = CompatibilityHTMLParser()
     parser.feed(html_text)
@@ -253,6 +336,15 @@ def analyze_website(source_root: Path, entry_file: str, html_text: str) -> dict:
     script_sources = _script_sources(html_text)
     external_scripts = _read_local_text(source_root, entry_file, script_sources)
     all_script_text = "\n".join(inline_scripts + [text for _path, text in external_scripts])
+    inline_script_chars = sum(len(body) for body in inline_scripts)
+    spa = detect_spa_shell(
+        parser,
+        all_script_text,
+        inline_script_chars,
+        html_text=html_text,
+        linked_script_count=len(script_sources),
+        entry_file=entry_file,
+    )
 
     dynamic_target_ids = set(GET_ID_RE.findall(all_script_text)) | set(QUERY_ID_RE.findall(all_script_text))
     dynamic_target_classes = set(QUERY_CLASS_RE.findall(all_script_text))
@@ -297,7 +389,9 @@ def analyze_website(source_root: Path, entry_file: str, html_text: str) -> dict:
     animation_selectors = _animation_selectors(css_texts)
     missing = _missing_resources(source_root, entry_file, parser, css_texts)
 
-    if storage_usage and (parser.forms or dynamic_operations >= 3):
+    if spa["isSpaShell"]:
+        website_type = "JavaScript app / SPA shell"
+    elif storage_usage and (parser.forms or dynamic_operations >= 3):
         website_type = "Interactive web application"
     elif script_blocks or external_scripts:
         website_type = "Static HTML with JavaScript"
@@ -305,20 +399,35 @@ def analyze_website(source_root: Path, entry_file: str, html_text: str) -> dict:
         website_type = "Static HTML website"
 
     direct_editable = sum(parser.tags.get(tag, 0) for tag in ("h1", "h2", "h3", "h4", "p", "a", "button", "img"))
+    if spa["isSpaShell"]:
+        # Mount points and chrome may inflate editable estimates; the real content is runtime-only.
+        direct_editable = min(direct_editable, 12)
+    has_editable_static = _has_editable_static_content(parser, spa, direct_editable)
+    entry_parts = {part.lower() for part in PurePosixPath(entry_file).parts}
+    built_output_entry = bool(entry_parts & BUILD_OUTPUT_DIRS)
+    prefer_live_preview = bool(spa["isSpaShell"] or (built_output_entry and not has_editable_static))
+
     protected_regions = len(runtime_regions)
     score = 100
     score -= min(35, protected_regions * 4)
     score -= min(25, len(missing) * 5)
     score -= 10 if dynamic_operations >= 10 else 0
     score -= 8 if storage_usage else 0
-    score = max(30, score)
+    if spa["isSpaShell"]:
+        score = min(score, 45)
+    score = max(20, score)
 
     recommendations: list[str] = []
+    if spa["isSpaShell"] or prefer_live_preview:
+        recommendations.append(
+            spa["guidance"]
+            or "Open Live Preview to see the built website. Use Capture this page before Safe Edit."
+        )
     if parser.lazy_media:
         recommendations.append("Lazy-loaded media is hydrated automatically in Safe Edit mode.")
     if animation_selectors:
         recommendations.append("Animation-hidden content is temporarily revealed in Safe Edit mode.")
-    if runtime_regions:
+    if runtime_regions and not spa["isSpaShell"]:
         recommendations.append("Use Interactive mode to view JavaScript-generated regions before editing nearby content.")
     if storage_usage:
         recommendations.append("Live Preview uses an isolated project origin so localStorage and application state can run.")
@@ -330,6 +439,7 @@ def analyze_website(source_root: Path, entry_file: str, html_text: str) -> dict:
     return {
         "websiteType": website_type,
         "compatibilityScore": score,
+        "supportProfile": support_profile_payload(),
         "htmlPageCount": len(html_pages),
         "pages": html_pages[:40],
         "inlineStyleCount": len(inline_styles),
@@ -354,7 +464,11 @@ def analyze_website(source_root: Path, entry_file: str, html_text: str) -> dict:
         "runtimeRegionCount": len(runtime_regions),
         "runtimeRegions": runtime_regions[:60],
         "directEditableEstimate": direct_editable,
+        "hasEditableStaticContent": has_editable_static,
+        "preferLivePreview": prefer_live_preview,
+        "canSafeEdit": has_editable_static and not spa["isSpaShell"],
         "missingResourceCount": len(missing),
         "missingResources": missing,
         "recommendations": recommendations,
+        "spaShell": spa,
     }

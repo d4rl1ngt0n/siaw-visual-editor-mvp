@@ -35,18 +35,20 @@
   font: 600 14px/1.5 Arial, sans-serif;
 }
 
-/* Generic compatibility guard for imported self-contained HTML files. */
-.siaw-visual-edit-mode img,
-.siaw-visual-edit-mode svg,
-.siaw-visual-edit-mode video,
-.siaw-visual-edit-mode canvas,
-.siaw-visual-edit-mode iframe {
-  max-width: 100%;
+/* Do NOT set unlayered img { height:auto; max-width:100% } here.
+   Tailwind v4 (and any @layer utilities) lose to unlayered editor CSS, which
+   blows up logos/heroes (h-10, w-auto, etc.) on every captured/imported site. */
+
+/* Cart/modals/drawers are often captured while open and cover the whole page.
+   Hide them in Safe Edit so layout editing works. Markup stays in Layers. */
+.siaw-visual-edit-mode [role="dialog"],
+.siaw-visual-edit-mode [role="alertdialog"],
+.siaw-visual-edit-mode [aria-modal="true"] {
+  display: none !important;
 }
 
-.siaw-visual-edit-mode img,
-.siaw-visual-edit-mode video {
-  height: auto;
+.siaw-visual-edit-mode [class~="fixed"][class*="inset-0"][aria-hidden="true"] {
+  display: none !important;
 }
 
 /* MVP 4A universal animation visibility. Applied only in the editor canvas. */
@@ -67,4 +69,51 @@
   border-radius: 5px;
   background: rgba(95, 30, 30, .08);
   font-size: .9em;
+}
+
+/* Empty JS carousels: hide inert chrome so placeholders do not look broken. */
+.siaw-visual-edit-mode .siaw-editor-empty-carousel .hc-arrow,
+.siaw-visual-edit-mode .siaw-editor-empty-carousel .rc-nav,
+.siaw-visual-edit-mode .hero-carousel:has(.js-hc-track:empty) .hc-arrow,
+.siaw-visual-edit-mode .hero-carousel:has(.js-hc-track .siaw-editor-runtime-note) .hc-arrow,
+.siaw-visual-edit-mode .reviews-carousel:has(#reviewsTrack:empty) .rc-nav,
+.siaw-visual-edit-mode .reviews-carousel:has(#reviewsTrack .siaw-editor-runtime-note) .rc-nav {
+  display: none !important;
+}
+
+.siaw-visual-edit-mode .hc-slide[data-siaw-hydrated="hero-carousel"] img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.siaw-visual-edit-mode #reviewsTrack[data-siaw-hydrated],
+.siaw-visual-edit-mode #reviewsTrack:has(.review[data-siaw-hydrated="reviews"]) {
+  display: flex;
+  gap: 16px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  transform: none !important;
+}
+
+.siaw-visual-edit-mode #reviewsTrack .review[data-siaw-hydrated="reviews"] {
+  min-width: min(280px, 80%);
+  flex: 0 0 auto;
+}
+
+/* Responsive visibility (mirrors export CSS) */
+@media (min-width: 993px) {
+  .siaw-visual-edit-mode .siaw-hide-desktop { display: none !important; }
+}
+@media (max-width: 992px) and (min-width: 576px) {
+  .siaw-visual-edit-mode .siaw-hide-tablet { display: none !important; }
+}
+@media (max-width: 575px) {
+  .siaw-visual-edit-mode .siaw-hide-mobile { display: none !important; }
+}
+
+.siaw-visual-edit-mode .siaw-column:empty,
+.siaw-visual-edit-mode .siaw-container:empty {
+  min-height: 72px;
 }

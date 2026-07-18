@@ -1,5 +1,31 @@
 (() => {
-  const form = document.querySelector(".upload-form");
+  const tabs = document.querySelectorAll("[data-create-tab]");
+  const panels = document.querySelectorAll("[data-create-panel]");
+  const activateTab = (name) => {
+    tabs.forEach((tab) => {
+      const active = tab.getAttribute("data-create-tab") === name;
+      tab.classList.toggle("is-active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    panels.forEach((panel) => {
+      panel.classList.toggle("is-hidden", panel.getAttribute("data-create-panel") !== name);
+    });
+  };
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => activateTab(tab.getAttribute("data-create-tab") || "ai"));
+  });
+
+  const generateForm = document.querySelector("[data-generate-form]");
+  const generateSubmit = document.querySelector("[data-generate-submit]");
+  generateForm?.addEventListener("submit", () => {
+    if (!generateSubmit) return;
+    generateSubmit.disabled = true;
+    generateSubmit.textContent = "Generating website…";
+  });
+})();
+
+(() => {
+  const form = document.querySelector("#uploadForm");
   if (!form) return;
 
   const fileInput = form.querySelector('input[name="website_zip"]');
@@ -20,6 +46,20 @@
   const previewFiles = preview.querySelector("[data-preview-files]");
   const previewStatus = preview.querySelector("[data-preview-status]");
   const clearButton = preview.querySelector("[data-preview-clear]");
+
+  const sideImport = document.querySelector("[data-side-import]");
+  const emptyDrop = document.querySelector("[data-empty-drop]");
+  const sideReady = document.querySelector("[data-side-ready]");
+  const sideMeta = document.querySelector("[data-side-preview-meta]");
+  const sideStatus = document.querySelector("[data-side-preview-status]");
+  const sideFiles = document.querySelector("[data-side-preview-files]");
+  const sideFrame = document.querySelector("[data-side-preview-frame]");
+  const sideFrameWrap = document.querySelector("[data-side-preview-frame-wrap]");
+  const sideCode = document.querySelector("[data-side-preview-code]");
+  const sideName = document.querySelector("[data-side-name]");
+  const sideClear = document.querySelector("[data-side-clear]");
+
+  let ingestSource = "left";
 
   const PREFERRED_ENTRY_NAMES = [
     "index.html", "index.htm", "default.html", "default.htm",
@@ -58,9 +98,23 @@
   }
 
   function resetDropCopy() {
-    if (dropTitle) dropTitle.textContent = "Select ZIP or file";
+    if (dropTitle) dropTitle.textContent = "Select ZIP or HTML file";
     if (dropHint) dropHint.textContent = "Maximum 25 MB after packing.";
     dropLabel?.classList.remove("has-file");
+  }
+
+  function syncSideNameFromForm() {
+    if (sideName && nameInput) sideName.value = nameInput.value;
+  }
+
+  function syncFormNameFromSide() {
+    if (sideName && nameInput) nameInput.value = sideName.value;
+  }
+
+  function setSideReadyVisible(show) {
+    if (!sideImport) return;
+    if (emptyDrop) emptyDrop.hidden = show;
+    if (sideReady) sideReady.hidden = !show;
   }
 
   function hidePreview() {
@@ -68,64 +122,110 @@
     preview.hidden = true;
     preview.classList.remove("is-visible");
     if (previewFrame) previewFrame.removeAttribute("src");
+    if (sideFrame) sideFrame.removeAttribute("src");
     if (previewCode) {
       previewCode.hidden = true;
       previewCode.textContent = "";
     }
+    if (sideCode) {
+      sideCode.hidden = true;
+      sideCode.textContent = "";
+    }
     if (previewFrameWrap) previewFrameWrap.hidden = false;
+    if (sideFrameWrap) sideFrameWrap.hidden = false;
     if (previewMeta) previewMeta.textContent = "";
+    if (sideMeta) sideMeta.textContent = "";
     if (previewFiles) previewFiles.innerHTML = "";
+    if (sideFiles) sideFiles.innerHTML = "";
     if (previewStatus) previewStatus.textContent = "";
+    if (sideStatus) sideStatus.textContent = "";
+    if (sideName) sideName.value = "";
     setEntryPath("");
     resetDropCopy();
+    setSideReadyVisible(false);
+    ingestSource = "left";
   }
 
   function showPreviewShell(label, sizeBytes, statusText) {
-    preview.hidden = false;
-    preview.classList.add("is-visible");
+    const metaText = `${label} · ${formatBytes(sizeBytes)}`;
     dropLabel?.classList.add("has-file");
     if (dropTitle) dropTitle.textContent = label;
     if (dropHint) dropHint.textContent = `${formatBytes(sizeBytes)} ready to import`;
-    if (previewMeta) previewMeta.textContent = `${label} · ${formatBytes(sizeBytes)}`;
+    if (previewMeta) previewMeta.textContent = metaText;
+    if (sideMeta) sideMeta.textContent = metaText;
     if (previewStatus) previewStatus.textContent = statusText || "";
+    if (sideStatus) sideStatus.textContent = statusText || "";
+
     if (nameInput && !nameInput.value.trim()) {
       nameInput.value = label.replace(/\.(zip|html|htm|js|ts|tsx|jsx|vue|svelte|py|json|md|txt)$/i, "").replace(/[-_]+/g, " ").trim();
+    }
+    syncSideNameFromForm();
+
+    // When the empty projects panel exists, show the ready card there.
+    // Keep the left form pickers, but put the main preview/import on the right.
+    if (sideImport) {
+      preview.hidden = true;
+      preview.classList.remove("is-visible");
+      setSideReadyVisible(true);
+    } else {
+      preview.hidden = false;
+      preview.classList.add("is-visible");
     }
   }
 
   function showPreviewError(message) {
-    preview.hidden = false;
-    preview.classList.add("is-visible");
+    showPreviewShell("Import issue", 0, "");
     if (previewMeta) previewMeta.textContent = message;
+    if (sideMeta) sideMeta.textContent = message;
     if (previewStatus) previewStatus.textContent = "";
+    if (sideStatus) sideStatus.textContent = "";
     if (previewFiles) previewFiles.innerHTML = "";
+    if (sideFiles) sideFiles.innerHTML = "";
     if (previewCode) {
       previewCode.hidden = true;
       previewCode.textContent = "";
     }
+    if (sideCode) {
+      sideCode.hidden = true;
+      sideCode.textContent = "";
+    }
     if (previewFrameWrap) previewFrameWrap.hidden = true;
+    if (sideFrameWrap) sideFrameWrap.hidden = true;
   }
 
   function setFrameHtml(htmlText) {
     revokePreviewUrl();
     if (previewFrameWrap) previewFrameWrap.hidden = false;
+    if (sideFrameWrap) sideFrameWrap.hidden = false;
     if (previewCode) {
       previewCode.hidden = true;
       previewCode.textContent = "";
     }
+    if (sideCode) {
+      sideCode.hidden = true;
+      sideCode.textContent = "";
+    }
     const blob = new Blob([htmlText], { type: "text/html" });
     activeObjectUrl = URL.createObjectURL(blob);
     if (previewFrame) previewFrame.src = activeObjectUrl;
+    if (sideFrame) sideFrame.src = activeObjectUrl;
   }
 
   function setCodePreview(text, path) {
     revokePreviewUrl();
     if (previewFrame) previewFrame.removeAttribute("src");
+    if (sideFrame) sideFrame.removeAttribute("src");
     if (previewFrameWrap) previewFrameWrap.hidden = true;
+    if (sideFrameWrap) sideFrameWrap.hidden = true;
+    const clipped = text.length > 4000 ? `${text.slice(0, 4000)}\n…` : text;
+    const content = clipped || `(empty file: ${path})`;
     if (previewCode) {
       previewCode.hidden = false;
-      const clipped = text.length > 4000 ? `${text.slice(0, 4000)}\n…` : text;
-      previewCode.textContent = clipped || `(empty file: ${path})`;
+      previewCode.textContent = content;
+    }
+    if (sideCode) {
+      sideCode.hidden = false;
+      sideCode.textContent = content;
     }
   }
 
@@ -147,9 +247,9 @@
     return 0;
   }
 
-  function renderFileList(paths, entryPath) {
-    if (!previewFiles) return;
-    previewFiles.innerHTML = "";
+  function renderFileListInto(container, paths, entryPath) {
+    if (!container) return;
+    container.innerHTML = "";
     const unique = [...new Set(paths)].sort(compareEntries).slice(0, 12);
     unique.forEach((path) => {
       const item = document.createElement("li");
@@ -159,18 +259,31 @@
       if (path === entryPath) item.classList.add("is-entry");
       button.addEventListener("click", () => {
         setEntryPath(path);
-        [...previewFiles.children].forEach((child) => child.classList.toggle("is-entry", child === item));
-        if (previewStatus) previewStatus.textContent = `Entry set to ${path}. Click import when ready.`;
+        [previewFiles, sideFiles].forEach((list) => {
+          if (!list) return;
+          [...list.children].forEach((child) => {
+            const label = child.querySelector("button")?.textContent || "";
+            child.classList.toggle("is-entry", label === path);
+          });
+        });
+        const statusText = `Entry set to ${path}. Click import when ready.`;
+        if (previewStatus) previewStatus.textContent = statusText;
+        if (sideStatus) sideStatus.textContent = statusText;
       });
       item.appendChild(button);
-      previewFiles.appendChild(item);
+      container.appendChild(item);
     });
     if (paths.length > unique.length) {
       const more = document.createElement("li");
       more.className = "is-more";
       more.textContent = `+${paths.length - unique.length} more files`;
-      previewFiles.appendChild(more);
+      container.appendChild(more);
     }
+  }
+
+  function renderFileList(paths, entryPath) {
+    renderFileListInto(previewFiles, paths, entryPath);
+    renderFileListInto(sideFiles, paths, entryPath);
   }
 
   async function inflateRaw(bytes) {
@@ -475,7 +588,13 @@
     await previewSelectedFile(file);
   }
 
-  folderButton?.addEventListener("click", () => folderInput?.click());
+  folderButton?.addEventListener("click", () => {
+    ingestSource = "left";
+    folderInput?.click();
+  });
+  dropLabel?.addEventListener("click", () => {
+    ingestSource = "left";
+  });
 
   folderInput?.addEventListener("change", async () => {
     const list = folderInput.files;
@@ -485,6 +604,10 @@
       const packed = await zipFolderFiles(list);
       assignFileToInput(packed.file);
       await previewSelectedFile(packed.file, packed.paths);
+      if (sideImport) {
+        sideReady?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        sideName?.focus();
+      }
     } catch (error) {
       showPreviewError(error instanceof Error ? error.message : "Could not pack that folder.");
     } finally {
@@ -493,12 +616,134 @@
   });
 
   fileInput.addEventListener("change", () => {
-    void handleFileChange();
+    void handleFileChange().then(() => {
+      if (sideImport && fileInput.files?.length) {
+        sideReady?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        sideName?.focus();
+      }
+    });
   });
 
   clearButton?.addEventListener("click", () => {
     fileInput.value = "";
     if (folderInput) folderInput.value = "";
     hidePreview();
+  });
+
+  async function ingestFiles(fileList, source = "left") {
+    ingestSource = source;
+    const files = [...(fileList || [])].filter(Boolean);
+    if (!files.length) return;
+    const looksLikeFolder = files.length > 1
+      || files.some((file) => Boolean(file.webkitRelativePath && file.webkitRelativePath.includes("/")));
+    try {
+      if (looksLikeFolder) {
+        showPreviewShell("Packing folder…", 0, "Skipping node_modules and other tooling folders…");
+        const packed = await zipFolderFiles(files);
+        assignFileToInput(packed.file);
+        await previewSelectedFile(packed.file, packed.paths);
+      } else {
+        assignFileToInput(files[0]);
+        await previewSelectedFile(files[0]);
+      }
+      if (sideImport && (source === "right" || sideReady)) {
+        sideReady?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        sideName?.focus();
+      } else {
+        form.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        nameInput?.focus();
+      }
+    } catch (error) {
+      showPreviewError(error instanceof Error ? error.message : "Could not import that drop.");
+      if (sideImport) sideReady?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      else form.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+
+  function bindDropTarget(target, { onClick, source = "left" } = {}) {
+    if (!target) return;
+    let dragDepth = 0;
+
+    target.addEventListener("dragenter", (event) => {
+      event.preventDefault();
+      dragDepth += 1;
+      target.classList.add("is-dragover");
+    });
+    target.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    });
+    target.addEventListener("dragleave", (event) => {
+      event.preventDefault();
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) target.classList.remove("is-dragover");
+    });
+    target.addEventListener("drop", (event) => {
+      event.preventDefault();
+      dragDepth = 0;
+      target.classList.remove("is-dragover");
+      void ingestFiles(event.dataTransfer?.files, source);
+    });
+
+    if (onClick) {
+      target.addEventListener("click", (event) => {
+        if (event.target.closest("button, a, input, label")) return;
+        onClick(event);
+      });
+      target.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick(event);
+        }
+      });
+    }
+  }
+
+  bindDropTarget(dropLabel, { source: "left" });
+
+  const emptyPickFile = document.querySelector("[data-empty-pick-file]");
+  const emptyPickFolder = document.querySelector("[data-empty-pick-folder]");
+  bindDropTarget(emptyDrop, {
+    source: "right",
+    onClick: () => {
+      ingestSource = "right";
+      fileInput.click();
+    },
+  });
+  emptyPickFile?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    ingestSource = "right";
+    fileInput.click();
+  });
+  emptyPickFolder?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    ingestSource = "right";
+    folderInput?.click();
+  });
+
+  sideName?.addEventListener("input", syncFormNameFromSide);
+  nameInput?.addEventListener("input", syncSideNameFromForm);
+  sideClear?.addEventListener("click", () => {
+    fileInput.value = "";
+    if (folderInput) folderInput.value = "";
+    hidePreview();
+  });
+  form.addEventListener("submit", () => {
+    syncFormNameFromSide();
+  });
+})();
+
+(() => {
+  document.querySelectorAll("[data-delete-project]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const name = form.getAttribute("data-project-name") || "this project";
+      const confirmed = await siawConfirm(`Delete "${name}"? This cannot be undone.`, {
+        danger: true,
+        confirmLabel: "Delete",
+        title: "Delete project",
+      });
+      if (confirmed) form.submit();
+    });
   });
 })();

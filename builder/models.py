@@ -42,3 +42,7 @@ class WebsiteProject(models.Model):
     @property
     def original_zip_path(self) -> Path:
         return self.project_dir / "original.zip"
+
+    @property
+    def snapshots_dir(self) -> Path:
+        return self.project_dir / "snapshots"

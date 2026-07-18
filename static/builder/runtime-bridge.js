@@ -78,6 +78,45 @@
       url: location.href,
       navigation: navigationSnapshot(),
       dynamicRegions: dynamicSnapshot(),
+      spaHints: {
+        emptyMain: Boolean(document.querySelector("main:empty, #main:empty, #app:empty, #root:empty")),
+        hash: location.hash || "",
+      },
+    }, "*");
+  }
+
+  function captureCurrentRoute() {
+    const clone = document.documentElement.cloneNode(true);
+    clone.querySelectorAll("script,[data-siaw-runtime-bridge],link[rel='preload'][as='script']").forEach((item) => item.remove());
+    [clone, ...clone.querySelectorAll("*")].forEach((item) => {
+      Array.from(item.attributes || []).forEach((attribute) => {
+        const name = attribute.name.toLowerCase();
+        if (name.startsWith("on") || name === "contenteditable") item.removeAttribute(attribute.name);
+      });
+      item.removeAttribute?.("data-siaw-capture-hover");
+    });
+
+    // Prefer a fully rendered document snapshot, capped for transport.
+    let html = "<!DOCTYPE html>\n" + clone.outerHTML;
+    if (html.length > 1800000) {
+      const main = document.querySelector("main, #main, #app, #root") || document.body;
+      const headBits = Array.from(document.head?.querySelectorAll("meta,title,link[rel='stylesheet'],style") || [])
+        .map((node) => node.outerHTML)
+        .join("\n");
+      const bodyClone = main.cloneNode(true);
+      bodyClone.querySelectorAll("script").forEach((item) => item.remove());
+      html = `<!DOCTYPE html>\n<html lang="${document.documentElement.lang || "en"}"><head>${headBits}</head><body>${bodyClone.outerHTML}</body></html>`;
+    }
+
+    window.parent.postMessage({
+      type: "siaw:route:capture:result",
+      projectId,
+      page: {
+        html: html.slice(0, 1900000),
+        title: document.title || "Captured page",
+        routeUrl: location.href,
+        textLength: (document.body?.innerText || "").replace(/\s+/g, " ").trim().length,
+      },
     }, "*");
   }
 
@@ -155,6 +194,7 @@
     if (data.type === "siaw:capture:start") startCapture();
     if (data.type === "siaw:capture:cancel") stopCapture();
     if (data.type === "siaw:runtime:snapshot:request") postSnapshot();
+    if (data.type === "siaw:route:capture") captureCurrentRoute();
   });
 
   window.addEventListener("load", () => {

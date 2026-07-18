@@ -36,6 +36,8 @@ MIDDLEWARE = [
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    # Before CSRF/X-Frame so Vite runtime hosts can short-circuit as a website root.
+    "builder.middleware.RuntimeHostMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -105,3 +107,21 @@ if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+
+# Optional tooling for Vite/JS projects and GitHub imports.
+ENABLE_JS_BUILD = os.environ.get("ENABLE_JS_BUILD", "true").lower() in {"1", "true", "yes"}
+JS_BUILD_TIMEOUT_SECONDS = int(os.environ.get("JS_BUILD_TIMEOUT_SECONDS", "300"))
+SSR_PREVIEW_BOOT_SECONDS = int(os.environ.get("SSR_PREVIEW_BOOT_SECONDS", "25"))
+ENABLE_GITHUB_IMPORT = os.environ.get("ENABLE_GITHUB_IMPORT", "false").lower() in {"1", "true", "yes"}
+GITHUB_CLONE_TIMEOUT_SECONDS = int(os.environ.get("GITHUB_CLONE_TIMEOUT_SECONDS", "120"))
+
+# AI website builder. Providers: auto | ollama | openai | offline
+# auto prefers local Ollama when running, else OpenAI if a key is set, else offline templates.
+SIAW_AI_PROVIDER = (os.environ.get("SIAW_AI_PROVIDER", "auto") or "auto").strip().lower()
+SIAW_AI_API_KEY = os.environ.get("SIAW_AI_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+SIAW_AI_BASE_URL = os.environ.get("SIAW_AI_BASE_URL", "")
+SIAW_AI_MODEL = os.environ.get("SIAW_AI_MODEL", "")
+SIAW_OLLAMA_HOST = os.environ.get("SIAW_OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+SIAW_AI_TIMEOUT_SECONDS = int(os.environ.get("SIAW_AI_TIMEOUT_SECONDS", "0") or "0")
+SIAW_AI_FORCE_OFFLINE = os.environ.get("SIAW_AI_FORCE_OFFLINE", "false").lower() in {"1", "true", "yes"}

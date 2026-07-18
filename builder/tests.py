@@ -9,6 +9,105 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .models import WebsiteProject
+from .services.html_tools import (
+    extract_hero_photos,
+    extract_reviews,
+    guard_hero_carousel_script,
+    hydrate_js_hero_carousel,
+    hydrate_js_reviews,
+    materialize_hero_photo_files,
+    sync_js_interactive_arrays,
+)
+
+
+class HeroCarouselHydrationTests(TestCase):
+    def test_extract_hydrate_and_guard_hero_carousel(self):
+        # 1x1 PNG
+        tiny_png = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )
+        html_text = f"""<!doctype html><html><body>
+<div data-hero-carousel class="hero-carousel">
+  <div class="hc-frame"><div class="hc-track js-hc-track"></div></div>
+  <div class="hc-dots js-hc-dots"></div>
+</div>
+<div id="reviewsTrack"></div>
+<div id="reviewsDots"></div>
+<script>
+var REVIEWS = [
+  {{ name: "Chris H.", stars: 5, text: "Great service.\\nFast delivery." }},
+  {{ name: "Amber C.", stars: 4, text: "Helpful team." }}
+];
+var HERO_PHOTOS = [
+  {{ src: 'data:image/png;base64,{tiny_png}', alt_en: 'Printer', alt_de: 'Drucker' }},
+  {{ src: 'images/part.jpg', alt_en: 'Part', alt_de: 'Teil' }}
+];
+var track = root.querySelector('.js-hc-track');
+var dotsWrap = root.querySelector('.js-hc-dots');
+var slides = [], dots = [];
+HERO_PHOTOS.forEach(function(p, i){{ track.appendChild(document.createElement('div')); }});
+</script>
+</body></html>"""
+        photos = extract_hero_photos(html_text)
+        self.assertEqual(len(photos), 2)
+        self.assertEqual(photos[0]["alt"], "Printer")
+        reviews = extract_reviews(html_text)
+        self.assertEqual(len(reviews), 2)
+        self.assertEqual(reviews[0]["name"], "Chris H.")
+        self.assertIn("Great service", reviews[0]["text"])
+
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            materialized = materialize_hero_photo_files(root, photos)
+            self.assertTrue((root / "siaw-hydrated" / "hero-0.png").is_file())
+            self.assertEqual(materialized[0]["src"], "siaw-hydrated/hero-0.png")
+            self.assertEqual(materialized[1]["src"], "images/part.jpg")
+
+            body = """<div data-hero-carousel class="hero-carousel">
+  <div class="hc-frame"><div class="hc-track js-hc-track"></div></div>
+  <div class="hc-dots js-hc-dots"></div>
+</div>
+<div id="reviewsTrack"></div>
+<div id="reviewsDots"></div>"""
+            hydrated, count = hydrate_js_hero_carousel(body, materialized)
+            self.assertEqual(count, 2)
+            self.assertIn('class="hc-slide is-active"', hydrated)
+            self.assertIn('src="siaw-hydrated/hero-0.png"', hydrated)
+            self.assertIn('class="hc-dot is-active"', hydrated)
+            self.assertIn('data-siaw-hydrated="hero-carousel"', hydrated)
+
+            hydrated, review_count = hydrate_js_reviews(hydrated, reviews)
+            self.assertEqual(review_count, 2)
+            self.assertIn('data-siaw-hydrated="reviews"', hydrated)
+            self.assertIn("Chris H.", hydrated)
+            self.assertIn("Great service", hydrated)
+
+            edited = hydrated.replace("images/part.jpg", "images/new-part.jpg").replace(
+                "Helpful team.", "Updated review text."
+            )
+            synced_html, synced = sync_js_interactive_arrays(html_text, edited)
+            self.assertTrue(any("Hero slideshow" in item for item in synced))
+            self.assertTrue(any("Reviews" in item for item in synced))
+            self.assertIn("images/new-part.jpg", synced_html)
+            self.assertIn("Updated review text.", synced_html)
+
+            reordered_html, reordered_synced = sync_js_interactive_arrays(
+                html_text,
+                edited,
+                slideshow_photos=[
+                    {"src": "images/new-part.jpg", "alt": "Part", "alt_en": "Part", "alt_de": "Teil"},
+                    {"src": "siaw-hydrated/hero-0.png", "alt": "Printer", "alt_en": "Printer", "alt_de": "Drucker"},
+                ],
+            )
+            self.assertTrue(any("Hero slideshow (2 slides)" in item for item in reordered_synced))
+            photos_literal_start = reordered_html.find("HERO_PHOTOS")
+            photos_chunk = reordered_html[photos_literal_start:photos_literal_start + 260]
+            self.assertLess(photos_chunk.find("images/new-part.jpg"), photos_chunk.find("siaw-hydrated/hero-0.png"))
+
+        guarded = guard_hero_carousel_script(html_text)
+        self.assertIn("siaw-hc-guard", guarded)
+        self.assertIn("track.querySelector('.hc-slide')", guarded)
+        self.assertEqual(guard_hero_carousel_script(guarded), guarded)
 
 
 class EditorWorkflowTests(TestCase):
@@ -46,7 +145,9 @@ class EditorWorkflowTests(TestCase):
         payload = response.json()
         self.assertIn("<h1>Hello</h1>", payload["html"])
         self.assertNotIn("script.js", payload["html"])
-        self.assertTrue(payload["canvasStyles"][0].endswith("/style.css"))
+        # Local CSS is inlined for Safe Edit so GrapesJS canvas does not miss styles.
+        inline_blob = "\n".join(payload.get("inlineStyles") or [])
+        self.assertTrue(inline_blob or any("style.css" in s for s in payload.get("canvasStyles") or []))
 
     def test_save_preserves_original_script_and_css(self):
         save_url = reverse("builder:save_project", args=[self.project.id])
@@ -146,6 +247,17 @@ class UploadSecurityTests(TestCase):
         self.assertEqual(project.entry_file, "landing.html")
         self.assertTrue(project.entry_path.is_file())
         self.assertIn("Hello", project.entry_path.read_text(encoding="utf-8"))
+
+    def test_delete_project_removes_files_and_record(self):
+        project = WebsiteProject.objects.create(name="Disposable", entry_file="index.html")
+        project.source_dir.mkdir(parents=True)
+        project.entry_path.write_text("<html><body>Bye</body></html>", encoding="utf-8")
+        project_dir = project.project_dir
+        self.assertTrue(project_dir.is_dir())
+        response = self.client.post(reverse("builder:delete_project", args=[project.id]))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(WebsiteProject.objects.filter(id=project.id).exists())
+        self.assertFalse(project_dir.exists())
 
     def test_upload_accepts_zip_without_index_html(self):
         buffer = io.BytesIO()
@@ -345,19 +457,20 @@ class UniversalCompatibilityEngineTests(TestCase):
 
     def test_isolated_runtime_enables_storage_without_sharing_editor_origin(self):
         host = f"{self.project.id}.runtime.localhost:8000"
-        response = self.client.get(
-            reverse("builder:project_file", kwargs={"project_id": self.project.id, "file_path": "index.html"}),
-            HTTP_HOST=host,
-        )
+        response = self.client.get("/", HTTP_HOST=host)
         self.assertEqual(response.status_code, 200)
         self.assertIn("allow-same-origin", response["Content-Security-Policy"])
         self.assertEqual(response["X-Frame-Options"], "ALLOWALL")
+        self.assertContains(response, "runtime-bridge.js")
 
     def test_preview_uses_isolated_project_origin(self):
         response = self.client.get(reverse("builder:preview", args=[self.project.id]))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, f"{self.project.id}.runtime.localhost")
         self.assertContains(response, "allow-same-origin")
+        # Preview loads the website root, not /files/entry.html
+        self.assertContains(response, f"{self.project.id}.runtime.localhost")
+        self.assertRegex(response.content.decode("utf-8"), r"\.runtime\.localhost(?::\d+)?/\?v=")
 
 class NavigationAndCaptureTests(TestCase):
     def setUp(self):
@@ -425,13 +538,66 @@ class NavigationAndCaptureTests(TestCase):
         project.source_dir.mkdir(parents=True)
         project.entry_path.write_text('<html><body><main>Hello</main></body></html>', encoding="utf-8")
         host = f"{project.id}.runtime.localhost:8000"
-        response = self.client.get(
-            reverse("builder:project_file", kwargs={"project_id": project.id, "file_path": "index.html"}),
-            HTTP_HOST=host,
-        )
+        response = self.client.get("/", HTTP_HOST=host)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "runtime-bridge.js")
         self.assertContains(response, 'data-siaw-runtime-bridge="true"')
+
+    def test_vite_shell_prefers_live_preview(self):
+        from builder.services.compatibility import analyze_website
+
+        project = WebsiteProject.objects.create(name="Vite Shell", entry_file="dist/index.html")
+        dist = project.source_dir / "dist"
+        dist.mkdir(parents=True)
+        (dist / "index.html").write_text(
+            '<!doctype html><html><body><div id="root"></div>'
+            '<script type="module" src="/assets/index-abc.js"></script></body></html>',
+            encoding="utf-8",
+        )
+        report = analyze_website(
+            project.source_dir,
+            project.entry_file,
+            (dist / "index.html").read_text(encoding="utf-8"),
+        )
+        self.assertTrue(report["spaShell"]["isSpaShell"])
+        self.assertTrue(report["preferLivePreview"])
+        self.assertFalse(report["canSafeEdit"])
+
+    def test_nitro_ssr_output_is_detected(self):
+        from builder.services.preview_server import detect_ssr_preview
+
+        project = WebsiteProject.objects.create(name="Nitro App", entry_file="package.json")
+        server = project.source_dir / "dist" / "server"
+        server.mkdir(parents=True)
+        (project.source_dir / "dist" / "nitro.json").write_text(
+            '{"serverEntry":"server/index.mjs","commands":{"preview":"node ./server/index.mjs"},'
+            '"framework":{"name":"nitro"}}',
+            encoding="utf-8",
+        )
+        (server / "index.mjs").write_text("console.log('ssr')\n", encoding="utf-8")
+        info = detect_ssr_preview(project.source_dir, project.source_dir)
+        self.assertIsNotNone(info)
+        self.assertEqual(info.kind, "nitro")
+        self.assertTrue(str(info.server_script).endswith("dist/server/index.mjs"))
+
+    def test_path_based_site_root_rewrites_vite_assets(self):
+        project = WebsiteProject.objects.create(name="Site Root", entry_file="dist/index.html")
+        dist = project.source_dir / "dist" / "assets"
+        dist.mkdir(parents=True)
+        (project.source_dir / "dist" / "index.html").write_text(
+            '<!doctype html><html><body><div id="root"></div>'
+            '<script type="module" src="/assets/index-abc.js"></script></body></html>',
+            encoding="utf-8",
+        )
+        (dist / "index-abc.js").write_text("console.log('ok')", encoding="utf-8")
+        html_response = self.client.get(reverse("builder:runtime_site", args=[project.id]))
+        self.assertEqual(html_response.status_code, 200)
+        self.assertContains(html_response, 'src="assets/index-abc.js"')
+        self.assertContains(html_response, "runtime-bridge.js")
+        asset_response = self.client.get(
+            reverse("builder:runtime_site_asset", kwargs={"project_id": project.id, "asset_path": "assets/index-abc.js"})
+        )
+        self.assertEqual(asset_response.status_code, 200)
 
     def test_editor_template_includes_capture_panel(self):
         project = WebsiteProject.objects.create(name="Capture UI", entry_file="index.html")
@@ -440,3 +606,302 @@ class NavigationAndCaptureTests(TestCase):
         response = self.client.get(reverse("builder:editor", args=[project.id]))
         self.assertContains(response, "Dynamic component capture")
         self.assertContains(response, "Capture component")
+
+
+class Phase1TrustTests(TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
+        self.override.enable()
+        self.project = WebsiteProject.objects.create(name="Phase1 Site", entry_file="index.html")
+        self.project.source_dir.mkdir(parents=True)
+        self.project.entry_path.write_text(
+            "<!doctype html><html><body>"
+            "<a href='about.html'>About</a>"
+            "<img src='images/hero.png'>"
+            "<h1>Home</h1>"
+            "</body></html>",
+            encoding="utf-8",
+        )
+        (self.project.source_dir / "about.html").write_text(
+            "<!doctype html><html><body><h1>About</h1><a href=''>Empty</a></body></html>",
+            encoding="utf-8",
+        )
+        (self.project.source_dir / "images").mkdir()
+        (self.project.source_dir / "images" / "hero.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    def tearDown(self):
+        self.override.disable()
+        self.temp_dir.cleanup()
+
+    def test_support_profile_in_editor_data(self):
+        response = self.client.get(reverse("builder:editor_data", args=[self.project.id]))
+        self.assertEqual(response.status_code, 200)
+        profile = response.json()["compatibility"]["supportProfile"]
+        self.assertIn("supported", profile)
+        self.assertTrue(profile["supported"])
+
+    def test_pages_add_duplicate_rename(self):
+        add = self.client.post(
+            reverse("builder:project_pages", args=[self.project.id]),
+            data=json.dumps({"action": "add", "name": "contact.html"}),
+            content_type="application/json",
+        )
+        self.assertEqual(add.status_code, 200)
+        self.assertTrue((self.project.source_dir / "contact.html").is_file())
+
+        dup = self.client.post(
+            reverse("builder:project_pages", args=[self.project.id]),
+            data=json.dumps({"action": "duplicate", "path": "about.html"}),
+            content_type="application/json",
+        )
+        self.assertEqual(dup.status_code, 200)
+        self.assertIn("about-copy", dup.json()["path"])
+
+        renamed = self.client.post(
+            reverse("builder:project_pages", args=[self.project.id]),
+            data=json.dumps({"action": "rename", "path": "contact.html", "name": "reach-us.html"}),
+            content_type="application/json",
+        )
+        self.assertEqual(renamed.status_code, 200)
+        self.assertEqual(renamed.json()["path"], "reach-us.html")
+        self.assertTrue((self.project.source_dir / "reach-us.html").is_file())
+
+    def test_export_validation_detects_empty_link(self):
+        response = self.client.get(reverse("builder:export_validate", args=[self.project.id]))
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["ok"])
+        self.assertGreaterEqual(payload["warningCount"], 1)
+
+    def test_snapshot_create_and_restore(self):
+        create = self.client.post(
+            reverse("builder:project_snapshots", args=[self.project.id]),
+            data=json.dumps({"action": "create", "label": "Before edit"}),
+            content_type="application/json",
+        )
+        self.assertEqual(create.status_code, 200)
+        snapshot_id = create.json()["snapshot"]["id"]
+        self.project.entry_path.write_text("<html><body><h1>Changed</h1></body></html>", encoding="utf-8")
+        restore = self.client.post(
+            reverse("builder:project_snapshots", args=[self.project.id]),
+            data=json.dumps({"action": "restore", "id": snapshot_id}),
+            content_type="application/json",
+        )
+        self.assertEqual(restore.status_code, 200)
+        self.assertIn("Home", self.project.entry_path.read_text(encoding="utf-8"))
+
+    def test_demo_zip_import_export_roundtrip(self):
+        demo = Path(__file__).resolve().parents[1] / "demo_projects" / "order_siaw_manufacturing_v32.zip"
+        if not demo.is_file():
+            self.skipTest("Demo ZIP missing")
+        upload = SimpleUploadedFile("order_siaw.zip", demo.read_bytes(), content_type="application/zip")
+        response = self.client.post(
+            reverse("builder:upload_project"),
+            {"name": "Demo Roundtrip", "website_zip": upload},
+        )
+        self.assertEqual(response.status_code, 302)
+        project = WebsiteProject.objects.get(name="Demo Roundtrip")
+        self.assertTrue(project.entry_path.is_file())
+        validate = self.client.get(reverse("builder:export_validate", args=[project.id]))
+        self.assertEqual(validate.status_code, 200)
+        export = self.client.get(reverse("builder:export_project", args=[project.id]))
+        self.assertEqual(export.status_code, 200)
+        self.assertEqual(export["Content-Type"], "application/zip")
+        self.assertGreater(len(export.content), 1000)
+
+
+class CaptureFidelityTests(TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
+        self.override.enable()
+        self.project = WebsiteProject.objects.create(name="Capture Site", entry_file="index.html")
+        self.project.source_dir.mkdir(parents=True)
+        assets = self.project.source_dir / "assets"
+        assets.mkdir()
+        (assets / "styles-abc.css").write_text("body{color:red}", encoding="utf-8")
+        (assets / "hero.jpg").write_bytes(b"jpeg")
+        self.project.entry_path.write_text(
+            '<!doctype html><html><body><div id="root"></div></body></html>',
+            encoding="utf-8",
+        )
+
+    def tearDown(self):
+        self.override.disable()
+        self.temp_dir.cleanup()
+
+    def test_capture_rewrites_assets_and_keeps_local_css(self):
+        captured_html = """<!DOCTYPE html><html><head>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost">
+<link rel="stylesheet" href="/assets/styles-abc.css">
+<link rel="modulepreload" href="/assets/app.js">
+</head><body>
+<img src="/assets/hero.jpg" alt="Hero">
+<a href="/collection">Collection</a>
+</body></html>"""
+        response = self.client.post(
+            reverse("builder:capture_route", args=[self.project.id]),
+            data=json.dumps({
+                "html": captured_html,
+                "routeUrl": "http://example.runtime.localhost:8000/",
+                "title": "Home",
+                "setAsEntry": True,
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.project.refresh_from_db()
+        self.assertTrue(self.project.entry_file.startswith("captured/"))
+        saved = self.project.entry_path.read_text(encoding="utf-8")
+        self.assertIn('../assets/styles-abc.css', saved)
+        self.assertIn('../assets/hero.jpg', saved)
+        self.assertNotIn('href="/assets/', saved)
+        self.assertNotIn('src="/assets/', saved)
+        self.assertIn("assets/styles-abc.css", self.project.stylesheet_files)
+        self.assertTrue(any(item.startswith("https://fonts.googleapis.com") for item in self.project.stylesheet_files))
+
+        data = self.client.get(reverse("builder:editor_data", args=[self.project.id]))
+        self.assertEqual(data.status_code, 200)
+        body = data.json()
+        self.assertIn("/files/assets/hero.jpg", body["html"])
+        self.assertNotIn('src="../assets/', body["html"])
+        # Local CSS is inlined so GrapesJS does not depend on relative <link> loading.
+        inline_blob = "\n".join(body.get("inlineStyles") or [])
+        self.assertIn("body{color:red}", inline_blob)
+
+    def test_inline_css_promotes_at_import_to_canvas_styles(self):
+        from builder.services.editor_assets import inline_local_stylesheets
+
+        assets = self.project.source_dir / "assets"
+        (assets / "app.css").write_text(
+            '@import "https://fonts.googleapis.com/css2?family=Jost";\nbody{color:navy}',
+            encoding="utf-8",
+        )
+        inline, remote = inline_local_stylesheets(
+            ["assets/app.css"],
+            source_root=self.project.source_dir,
+            project_file_prefix=f"/projects/{self.project.id}/files/",
+            origin="http://testserver",
+        )
+        self.assertEqual(len(inline), 1)
+        self.assertIn("body{color:navy}", inline[0])
+        self.assertNotIn("@import", inline[0])
+        self.assertIn("https://fonts.googleapis.com/css2?family=Jost", remote)
+
+    def test_absolutize_project_data_rewrites_hydrated_hero_paths(self):
+        from builder.services.editor_assets import absolutize_data_urls
+
+        hydrated = self.project.source_dir / "siaw-hydrated"
+        hydrated.mkdir(parents=True, exist_ok=True)
+        (hydrated / "hero-1.jpg").write_bytes(b"\xff\xd8\xff\xd9")
+        project_data = {
+            "assets": [
+                {
+                    "type": "image",
+                    "src": "siaw-hydrated/hero-1.jpg",
+                    "name": "hero-1.jpg",
+                    "relativePath": "siaw-hydrated/hero-1.jpg",
+                }
+            ],
+            "pages": [
+                {
+                    "frames": [
+                        {
+                            "component": {
+                                "type": "image",
+                                "attributes": {"src": "siaw-hydrated/hero-1.jpg"},
+                            }
+                        }
+                    ]
+                }
+            ],
+        }
+        absolute = absolutize_data_urls(
+            project_data,
+            source_root=self.project.source_dir,
+            entry_file=self.project.entry_file,
+            project_file_prefix=f"/projects/{self.project.id}/files/",
+            origin="http://testserver",
+        )
+        expected = f"http://testserver/projects/{self.project.id}/files/siaw-hydrated/hero-1.jpg"
+        self.assertEqual(absolute["assets"][0]["src"], expected)
+        self.assertEqual(absolute["assets"][0]["relativePath"], "siaw-hydrated/hero-1.jpg")
+        self.assertEqual(absolute["pages"][0]["frames"][0]["component"]["attributes"]["src"], expected)
+
+
+class AIWebsiteBuilderTests(TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.override = override_settings(
+            MEDIA_ROOT=self.temp_dir.name,
+            SIAW_AI_FORCE_OFFLINE=True,
+            SIAW_AI_PROVIDER="offline",
+            SIAW_AI_API_KEY="",
+            OPENAI_API_KEY="",
+        )
+        self.override.enable()
+
+    def tearDown(self):
+        self.override.disable()
+        self.temp_dir.cleanup()
+
+    def test_dashboard_shows_ai_builder(self):
+        response = self.client.get(reverse("builder:dashboard"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Create with AI")
+        self.assertContains(response, "generateForm")
+
+    def test_generate_project_offline_opens_safe_edit(self):
+        response = self.client.post(
+            reverse("builder:generate_project"),
+            data={
+                "name": "Alvora Demo",
+                "prompt": "Luxury fragrance boutique in Accra called Alvora with warm cream tones and perfume photography.",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("mode=safe", response["Location"])
+        project = WebsiteProject.objects.get(name="Alvora Demo")
+        self.assertEqual(project.entry_file, "index.html")
+        html = project.entry_path.read_text(encoding="utf-8")
+        self.assertIn("<!DOCTYPE html>", html)
+        self.assertIn("Alvora", html)
+        self.assertTrue((project.source_dir / "features.html").is_file())
+        self.assertTrue((project.source_dir / "story.html").is_file())
+        self.assertTrue((project.source_dir / "contact.html").is_file())
+        self.assertIn('href="features.html"', html)
+        self.assertTrue((project.project_dir / "original.zip").is_file())
+
+        data = self.client.get(reverse("builder:editor_data", args=[project.id]))
+        self.assertEqual(data.status_code, 200)
+        payload = data.json()
+        self.assertEqual(payload["mode"], "visual")
+        self.assertIn("Alvora", payload["html"])
+        details = payload["compatibility"]["pageDetails"]
+        paths = [item["path"] for item in details]
+        self.assertIn("features.html", paths)
+        self.assertTrue(
+            any(item.get("label") in {"Features", "Collection", "Menu"} for item in details)
+        )
+
+        pages = self.client.get(reverse("builder:project_pages", args=[project.id]))
+        self.assertEqual(pages.status_code, 200)
+        self.assertGreaterEqual(len(pages.json()["pages"]), 4)
+
+    def test_detect_sector_and_brief(self):
+        from builder.services.ai_builder import build_brief, detect_sector, render_offline_site
+
+        self.assertEqual(detect_sector("luxury perfume boutique"), "luxury")
+        brief = build_brief("Create a restaurant website called Harbor Table", project_name="Harbor")
+        self.assertEqual(brief.sector, "food")
+        self.assertIn("Harbor", brief.brand)
+        files = render_offline_site(brief)
+        total = sum(len(v) for v in files.values())
+        self.assertGreaterEqual(total, 12000)
+        self.assertIn("features.html", files)
+        self.assertIn("story.html", files)
+        self.assertIn("contact.html", files)
+        self.assertIn("styles.css", files)
+        self.assertIn('id="features"', files["index.html"])

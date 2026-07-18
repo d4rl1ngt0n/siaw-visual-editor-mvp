@@ -6,7 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ project.name }} | Siaw Visual Editor</title>
   <link rel="stylesheet" href="{% static 'vendor/grapesjs/grapes.min.css' %}">
-  <link rel="stylesheet" href="{% static 'builder/editor.css' %}">
+  <link rel="stylesheet" href="{% static 'builder/ui-dialog.css' %}">
+  <link rel="stylesheet" href="{% static 'builder/editor.css' %}?v=slideshow-upload-4">
 </head>
 <body>
   <header class="editor-topbar">
@@ -38,16 +39,51 @@
     </div>
   </header>
 
+  <div id="jsBuildOverlay" class="js-build-overlay" hidden>
+    <div class="js-build-card">
+      <p class="js-build-eyebrow">JS / Vite build</p>
+      <h2 id="jsBuildTitle">Preparing project visuals</h2>
+      <p id="jsBuildMessage" class="js-build-message">Installing dependencies and building production assets…</p>
+      <div id="jsBuildProgress" class="js-build-progress" hidden>
+        <div class="js-build-progress-row">
+          <span id="jsBuildPhase" class="js-build-phase">Starting</span>
+          <span id="jsBuildPercent" class="js-build-percent" aria-live="polite">0%</span>
+        </div>
+        <div class="js-build-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="jsBuildProgressTrack">
+          <div id="jsBuildProgressBar" class="js-build-progress-bar" style="width: 0%"></div>
+        </div>
+      </div>
+      <pre id="jsBuildLog" class="js-build-log" hidden></pre>
+      <div class="js-build-actions">
+        <button type="button" id="jsBuildRetry" class="primary-btn" hidden>Retry build</button>
+        <button type="button" id="jsBuildSkip" class="secondary-btn" hidden>Continue without build</button>
+      </div>
+    </div>
+  </div>
+
   <main class="editor-shell">
     <aside class="left-panel panel">
       <div class="panel-tabs">
         <button class="panel-tab active" data-target="filesPanel">Files</button>
+        <button class="panel-tab" data-target="pagesPanel">Pages</button>
+        <button class="panel-tab" data-target="assetsPanel">Assets</button>
         <button class="panel-tab" data-target="blocksPanel">Blocks</button>
         <button class="panel-tab" data-target="layersPanel">Layers</button>
       </div>
       <div id="filesPanel" class="panel-content active">
         <div class="panel-intro"><strong>Project files</strong><span>Open any text file. HTML can use visual edit; other sources use the code editor.</span></div>
         <div id="fileTree" class="file-tree"><div class="smart-loading">Loading files…</div></div>
+      </div>
+      <div id="pagesPanel" class="panel-content">
+        <div class="panel-intro"><strong>Pages</strong><span>Switch pages, add blanks, duplicate, rename or set the homepage.</span></div>
+        <div id="pagesManager" class="pages-manager"><div class="smart-loading">Loading pages…</div></div>
+      </div>
+      <div id="assetsPanel" class="panel-content">
+        <div class="panel-intro"><strong>Assets</strong><span>Project images. Upload replacements into images/uploads.</span></div>
+        <div class="assets-toolbar">
+          <label class="assets-upload-btn">Upload image<input type="file" id="assetUploadInput" accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.avif,image/*" hidden></label>
+        </div>
+        <div id="assetsManager" class="assets-manager"><div class="smart-loading">Loading assets…</div></div>
       </div>
       <div id="blocksPanel" class="panel-content"><div id="blocks"></div></div>
       <div id="layersPanel" class="panel-content"><div id="layers"></div></div>
@@ -59,6 +95,19 @@
         <button type="button" aria-label="Close notice">×</button>
       </div>
       <div id="gjs"></div>
+      <div id="safeEditShellEmpty" class="safe-edit-shell-empty" hidden>
+        <div class="safe-edit-shell-card">
+          <p class="safe-edit-shell-eyebrow">Safe Edit</p>
+          <h2>This page is rendered by JavaScript</h2>
+          <p id="safeEditShellMessage">
+            Interactive mode shows the real website. Safe Edit only sees the empty HTML shell until you capture a rendered page.
+          </p>
+          <div class="safe-edit-shell-actions">
+            <button type="button" id="safeEditShellInteractive" class="primary-btn">Open Interactive</button>
+            <button type="button" id="safeEditShellCapture" class="dark-btn">Capture this page</button>
+          </div>
+        </div>
+      </div>
       <div id="codeEditorShell" class="code-editor-shell" hidden>
         <div class="code-editor-bar">
           <strong id="codeEditorPath">source</strong>
@@ -67,7 +116,14 @@
         <textarea id="codeEditor" class="code-editor" spellcheck="false" aria-label="Source code editor"></textarea>
       </div>
       <div id="interactiveMode" class="interactive-mode" hidden>
-        <div class="interactive-banner"><strong>Interactive mode</strong><span>The website JavaScript is running inside an isolated project origin. Use this mode to inspect menus, carousels, reviews, filters and application screens.</span><button type="button" id="captureStartBtn" class="capture-start-btn">Capture component</button></div>
+        <div class="interactive-banner">
+          <strong>Interactive mode</strong>
+          <span>The website JavaScript is running inside an isolated project origin. For JS apps / SPAs, navigate to a route then capture the rendered page for Safe Edit.</span>
+          <div class="interactive-banner-actions">
+            <button type="button" id="captureRouteBtn" class="capture-start-btn">Capture this page</button>
+            <button type="button" id="captureStartBtn" class="capture-start-btn capture-start-btn-secondary">Capture component</button>
+          </div>
+        </div>
         <iframe id="interactiveFrame" title="Interactive website inspection" sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-same-origin"></iframe>
       </div>
     </section>
@@ -83,6 +139,9 @@
       </div>
       <div id="traitsPanel" class="right-content active">
         <div class="panel-intro"><strong>Element settings</strong><span>Select an item on the website.</span></div>
+        <div id="linkManager" class="link-manager" hidden></div>
+        <div id="slideshowManager" class="slideshow-manager" hidden></div>
+        <div id="responsiveManager" class="responsive-manager" hidden></div>
         <div id="traits"></div>
       </div>
       <div id="stylesPanel" class="right-content"><div id="styles"></div></div>
@@ -98,6 +157,8 @@
       <div id="reportPanel" class="right-content">
         <div class="panel-intro"><strong>Compatibility report</strong><span>See what the importer detected, what is editable and which areas depend on JavaScript.</span></div>
         <div id="compatibilityReport" class="compatibility-report"><div class="smart-loading">Analysing this website…</div></div>
+        <div class="panel-intro" style="border-top:1px solid #e7eaee"><strong>Restore points</strong><span>Save a named snapshot before big changes. Original ZIP restore stays separate.</span></div>
+        <div id="snapshotsManager" class="snapshots-manager"><div class="smart-loading">Loading restore points…</div></div>
       </div>
       <div id="protectedHint" class="protected-hint" hidden>
         <strong>Protected interactive feature</strong>
@@ -113,6 +174,7 @@
 
   {{ editor_config|json_script:"editor-config" }}
   <script src="{% static 'vendor/grapesjs/grapes.min.js' %}"></script>
-  <script src="{% static 'builder/editor.js' %}"></script>
+  <script src="{% static 'builder/ui-dialog.js' %}"></script>
+  <script src="{% static 'builder/editor.js' %}?v=slideshow-upload-4"></script>
 </body>
 </html>

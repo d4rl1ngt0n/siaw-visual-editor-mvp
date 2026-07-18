@@ -1,19 +1,49 @@
 from django import forms
 
 
+class WebsiteGenerateForm(forms.Form):
+    name = forms.CharField(
+        max_length=160,
+        label="Project name",
+        widget=forms.TextInput(attrs={"placeholder": "e.g. Alvora Beauty"}),
+    )
+    prompt = forms.CharField(
+        label="Describe the website",
+        widget=forms.Textarea(
+            attrs={
+                "rows": 5,
+                "placeholder": (
+                    "e.g. Luxury fragrance boutique in Accra called Alvora. "
+                    "Warm cream tones, elegant serif headlines, hero with perfume photography, "
+                    "featured scents, boutique locations, and a book-a-visit CTA."
+                ),
+            }
+        ),
+    )
+
+    def clean_prompt(self):
+        value = (self.cleaned_data.get("prompt") or "").strip()
+        if len(value) < 12:
+            raise forms.ValidationError("Add a bit more detail so the builder can design the page.")
+        if len(value) > 4000:
+            raise forms.ValidationError("Keep the brief under 4000 characters.")
+        return value
+
+
 class WebsiteUploadForm(forms.Form):
     name = forms.CharField(
         max_length=160,
         label="Project name",
-        widget=forms.TextInput(attrs={"placeholder": "e.g. Order Siaw Website"}),
+        widget=forms.TextInput(attrs={"placeholder": "e.g. My website"}),
     )
     website_zip = forms.FileField(
-        label="Project file",
-        help_text="Upload a folder, .zip, or a source/HTML file from any common web stack.",
+        label="Website file",
+        required=True,
+        help_text="Upload a folder, .zip, or an HTML file.",
         widget=forms.ClearableFileInput(
             attrs={
                 "accept": (
-                    ".zip,.html,.htm,.css,.js,.ts,.tsx,.jsx,.vue,.svelte,.py,.json,.md,.txt,"
+                    ".zip,.html,.htm,.css,.js,.json,.md,.txt,"
                     "application/zip,text/html,text/css,text/javascript,text/plain"
                 ),
             }
@@ -26,14 +56,15 @@ class WebsiteUploadForm(forms.Form):
     )
 
     def clean_website_zip(self):
-        uploaded = self.cleaned_data["website_zip"]
+        uploaded = self.cleaned_data.get("website_zip")
+        if not uploaded:
+            raise forms.ValidationError("Choose a folder, ZIP, or HTML file to import.")
         name = uploaded.name.lower()
         allowed_suffixes = (
-            ".zip", ".html", ".htm", ".css", ".js", ".ts", ".tsx", ".jsx",
-            ".vue", ".svelte", ".py", ".json", ".md", ".txt", ".php",
+            ".zip", ".html", ".htm", ".css", ".js", ".json", ".md", ".txt",
         )
         if not name.endswith(allowed_suffixes):
-            raise forms.ValidationError("Please upload a folder ZIP, archive, or supported source file.")
+            raise forms.ValidationError("Please upload a folder ZIP, archive, or HTML file.")
         if uploaded.size > 25 * 1024 * 1024:
             raise forms.ValidationError("The file must be 25 MB or smaller for this MVP.")
         return uploaded

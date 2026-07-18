@@ -12,11 +12,23 @@
   const compatibilityReport = document.getElementById("compatibilityReport");
   const captureManager = document.getElementById("captureManager");
   const captureStartBtn = document.getElementById("captureStartBtn");
+  const captureRouteBtn = document.getElementById("captureRouteBtn");
   const safeModeBtn = document.getElementById("safeModeBtn");
   const interactiveModeBtn = document.getElementById("interactiveModeBtn");
   const interactiveMode = document.getElementById("interactiveMode");
+  const safeEditShellEmpty = document.getElementById("safeEditShellEmpty");
+  const safeEditShellMessage = document.getElementById("safeEditShellMessage");
+  const safeEditShellInteractive = document.getElementById("safeEditShellInteractive");
+  const safeEditShellCapture = document.getElementById("safeEditShellCapture");
   const interactiveFrame = document.getElementById("interactiveFrame");
   const canvasArea = document.querySelector(".canvas-area");
+  const pagesManager = document.getElementById("pagesManager");
+  const assetsManager = document.getElementById("assetsManager");
+  const assetUploadInput = document.getElementById("assetUploadInput");
+  const snapshotsManager = document.getElementById("snapshotsManager");
+  const linkManager = document.getElementById("linkManager");
+  const slideshowManager = document.getElementById("slideshowManager");
+  const responsiveManager = document.getElementById("responsiveManager");
 
   let editor = null;
   let editorReady = false;
@@ -106,17 +118,123 @@
     return `<span style="display:block;font-size:18px;font-weight:900;margin-bottom:5px">${icon}</span><span>${text}</span>`;
   }
 
+  const RESPONSIVE_VISIBILITY_CSS = `
+/* siaw-responsive-visibility */
+@media (min-width: 993px) {
+  .siaw-hide-desktop { display: none !important; }
+}
+@media (max-width: 992px) and (min-width: 576px) {
+  .siaw-hide-tablet { display: none !important; }
+}
+@media (max-width: 575px) {
+  .siaw-hide-mobile { display: none !important; }
+}
+`.trim();
+
+  function columnCell(label = "Drop widgets here") {
+    return (
+      `<div class="siaw-column" data-siaw-layout="column" style="min-height:80px;padding:16px;border:1px dashed #d0d5db;border-radius:10px;background:#fafbfc">`
+      + `<p style="margin:0;color:#737b85;font-size:13px">${label}</p>`
+      + `</div>`
+    );
+  }
+
+  function registerLayoutComponents(instance) {
+    const dom = instance.DomComponents;
+    ["siaw-container", "siaw-section", "siaw-column"].forEach((type) => {
+      dom.addType(type, {
+        isComponent(el) {
+          if (!el || !el.getAttribute) return false;
+          const layout = el.getAttribute("data-siaw-layout");
+          if (type === "siaw-container" && layout === "container") return { type };
+          if (type === "siaw-section" && (layout === "section" || el.tagName === "SECTION" && el.classList?.contains("siaw-section"))) {
+            return { type };
+          }
+          if (type === "siaw-column" && layout === "column") return { type };
+          return false;
+        },
+        model: {
+          defaults: {
+            tagName: type === "siaw-section" ? "section" : "div",
+            droppable: true,
+            stylable: true,
+            attributes: {
+              "data-siaw-layout": type === "siaw-container" ? "container" : type === "siaw-section" ? "section" : "column",
+            },
+          },
+        },
+      });
+    });
+  }
+
   function registerBlocks(instance, data) {
     const blocks = instance.BlockManager;
     const firstAsset = data.assets.length ? data.assets[0].src : "";
 
+    // Layout (Elementor-style structure, same Blocks panel)
+    blocks.add("siaw-container", {
+      label: blockLabel("▢", "Container"),
+      category: "Layout",
+      content: {
+        type: "siaw-container",
+        attributes: { "data-siaw-layout": "container", class: "siaw-container" },
+        style: {
+          display: "flex",
+          "flex-direction": "column",
+          gap: "16px",
+          width: "100%",
+          "max-width": "1140px",
+          margin: "0 auto",
+          padding: "24px 16px",
+          "min-height": "80px",
+        },
+        components: "<p>Drop widgets into this container.</p>",
+      },
+    });
+    blocks.add("siaw-section", {
+      label: blockLabel("§", "Section"),
+      category: "Layout",
+      content: {
+        type: "siaw-section",
+        attributes: { "data-siaw-layout": "section", class: "siaw-section section" },
+        style: { padding: "48px 16px", width: "100%" },
+        components: `
+          <div class="siaw-container" data-siaw-layout="container" style="display:flex;flex-direction:column;gap:16px;max-width:1140px;margin:0 auto">
+            <h2>New section</h2>
+            <p>Add headings, text, images and columns here.</p>
+          </div>
+        `,
+      },
+    });
+    blocks.add("columns-2", {
+      label: blockLabel("▥", "2 Columns"),
+      category: "Layout",
+      content: `<div class="siaw-columns" data-siaw-layout="columns" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;width:100%">${columnCell("Column 1")}${columnCell("Column 2")}</div>`,
+    });
+    blocks.add("columns-3", {
+      label: blockLabel("▦", "3 Columns"),
+      category: "Layout",
+      content: `<div class="siaw-columns" data-siaw-layout="columns" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;width:100%">${columnCell("Column 1")}${columnCell("Column 2")}${columnCell("Column 3")}</div>`,
+    });
+    blocks.add("columns-4", {
+      label: blockLabel("▤", "4 Columns"),
+      category: "Layout",
+      content: `<div class="siaw-columns" data-siaw-layout="columns" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;width:100%">${columnCell("Col 1")}${columnCell("Col 2")}${columnCell("Col 3")}${columnCell("Col 4")}</div>`,
+    });
+    blocks.add("inner-section", {
+      label: blockLabel("⧉", "Inner Section"),
+      category: "Layout",
+      content: `<div class="siaw-inner-section" data-siaw-layout="inner-section" style="display:grid;grid-template-columns:1.2fr 0.8fr;gap:24px;width:100%;padding:16px;border:1px dashed #d8dde3;border-radius:12px">${columnCell("Main")}${columnCell("Aside")}</div>`,
+    });
+
+    // Basic widgets
     blocks.add("heading", {
       label: blockLabel("H", "Heading"),
       category: "Basic",
       content: '<h2>New heading</h2>',
     });
     blocks.add("paragraph", {
-      label: blockLabel("¶", "Paragraph"),
+      label: blockLabel("¶", "Text Editor"),
       category: "Basic",
       content: '<p>Add your text here. Double-click the text to edit it.</p>',
     });
@@ -137,8 +255,72 @@
     blocks.add("primary-button", {
       label: blockLabel("▣", "Button"),
       category: "Basic",
-      content: '<a href="#contact" class="btn btn-primary">New Button</a>',
+      content: '<a href="#contact" class="btn btn-primary" style="display:inline-block;padding:12px 18px;border-radius:8px;background:#171717;color:#fff;text-decoration:none">New Button</a>',
     });
+    blocks.add("video", {
+      label: blockLabel("▶", "Video"),
+      category: "Basic",
+      content: `
+        <div class="siaw-video" data-siaw-widget="video" style="position:relative;width:100%;aspect-ratio:16/9;background:#111;border-radius:12px;overflow:hidden">
+          <iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" title="Video" style="position:absolute;inset:0;width:100%;height:100%;border:0" allowfullscreen loading="lazy"></iframe>
+        </div>
+      `,
+    });
+    blocks.add("divider", {
+      label: blockLabel("/", "Divider"),
+      category: "Basic",
+      content: '<hr class="siaw-divider" data-siaw-widget="divider" style="border:0;border-top:1px solid #d8dde3;margin:24px 0;width:100%">',
+    });
+    blocks.add("spacer", {
+      label: blockLabel("↕", "Spacer"),
+      category: "Basic",
+      content: '<div class="siaw-spacer" data-siaw-widget="spacer" style="height:48px" aria-hidden="true"></div>',
+    });
+    blocks.add("icon-box", {
+      label: blockLabel("◆", "Icon Box"),
+      category: "Basic",
+      content: `
+        <div class="siaw-icon-box" data-siaw-widget="icon-box" style="padding:24px;border:1px solid #e5e8eb;border-radius:14px;background:#fff;text-align:left">
+          <div style="width:40px;height:40px;border-radius:10px;background:#171717;color:#fff;display:grid;place-items:center;font-weight:800;margin-bottom:12px">i</div>
+          <h3 style="margin:0 0 8px">Icon box title</h3>
+          <p style="margin:0;color:#5c6570">Short supporting text for this feature or benefit.</p>
+        </div>
+      `,
+    });
+    blocks.add("icon-list", {
+      label: blockLabel("☰", "Icon List"),
+      category: "Basic",
+      content: `
+        <ul class="siaw-icon-list" data-siaw-widget="icon-list" style="margin:0;padding:0;list-style:none;display:grid;gap:10px">
+          <li style="display:flex;gap:10px;align-items:flex-start"><span aria-hidden="true">✓</span><span>List item one</span></li>
+          <li style="display:flex;gap:10px;align-items:flex-start"><span aria-hidden="true">✓</span><span>List item two</span></li>
+          <li style="display:flex;gap:10px;align-items:flex-start"><span aria-hidden="true">✓</span><span>List item three</span></li>
+        </ul>
+      `,
+    });
+    blocks.add("accordion", {
+      label: blockLabel("▾", "Accordion"),
+      category: "Basic",
+      content: `
+        <div class="siaw-accordion" data-siaw-widget="accordion" style="display:grid;gap:8px">
+          <details open style="border:1px solid #e5e8eb;border-radius:10px;padding:12px 14px;background:#fff">
+            <summary style="cursor:pointer;font-weight:700">Accordion item 1</summary>
+            <p style="margin:10px 0 0;color:#5c6570">Answer or details for the first item.</p>
+          </details>
+          <details style="border:1px solid #e5e8eb;border-radius:10px;padding:12px 14px;background:#fff">
+            <summary style="cursor:pointer;font-weight:700">Accordion item 2</summary>
+            <p style="margin:10px 0 0;color:#5c6570">Answer or details for the second item.</p>
+          </details>
+        </div>
+      `,
+    });
+    blocks.add("html-widget", {
+      label: blockLabel("</>", "HTML"),
+      category: "Basic",
+      content: '<div class="siaw-html" data-siaw-widget="html"><p>Custom HTML block. Edit this content in Layers or as text.</p></div>',
+    });
+
+    // Navigation / Cards / Sections (kept for existing workflows)
     blocks.add("nav-link", {
       label: blockLabel("↗", "Navigation Link"),
       category: "Navigation",
@@ -166,7 +348,7 @@
       `,
     });
     blocks.add("two-columns", {
-      label: blockLabel("▥", "Two Columns"),
+      label: blockLabel("▥", "Two Columns (legacy)"),
       category: "Sections",
       content: `
         <section class="section">
@@ -212,10 +394,15 @@
         </section>
       `,
     });
-    blocks.add("spacer", {
-      label: blockLabel("↕", "Spacer"),
-      category: "Basic",
-      content: '<div style="height:48px" aria-hidden="true"></div>',
+    blocks.add("testimonial", {
+      label: blockLabel("❝", "Testimonial"),
+      category: "Cards",
+      content: `
+        <figure class="siaw-testimonial" data-siaw-widget="testimonial" style="padding:24px;border:1px solid #e5e8eb;border-radius:14px;background:#fff;margin:0">
+          <blockquote style="margin:0 0 12px;font-size:16px;line-height:1.5">“This product made our workflow faster and clearer.”</blockquote>
+          <figcaption style="color:#5c6570;font-size:13px"><strong>Alex Rivera</strong> · Customer</figcaption>
+        </figure>
+      `,
     });
   }
 
@@ -256,6 +443,11 @@
         buildProps: ["flex-direction", "flex-wrap", "justify-content", "align-items", "align-content", "gap", "order", "flex-basis", "flex-grow", "flex-shrink"],
       },
       {
+        name: "Grid",
+        open: false,
+        buildProps: ["grid-template-columns", "grid-template-rows", "grid-column", "grid-row", "justify-items", "align-content", "gap"],
+      },
+      {
         name: "Effects",
         open: false,
         buildProps: ["transform", "transition", "cursor"],
@@ -279,9 +471,37 @@
     });
   }
 
+  let importedStyleBlobUrls = [];
+
+  function revokeImportedStyleBlobs() {
+    importedStyleBlobUrls.forEach((url) => {
+      try { URL.revokeObjectURL(url); } catch (_error) { /* ignore */ }
+    });
+    importedStyleBlobUrls = [];
+  }
+
+  function buildCanvasStyles(data) {
+    revokeImportedStyleBlobs();
+    const urls = [];
+    // Site CSS often lives in <style> tags. GrapesJS only auto-loads stylesheet URLs,
+    // so expose those inline blocks as blob URLs before remote font CSS.
+    (Array.isArray(data.inlineStyles) ? data.inlineStyles : []).forEach((cssText) => {
+      if (!cssText || !String(cssText).trim()) return;
+      const blobUrl = URL.createObjectURL(new Blob([cssText], { type: "text/css" }));
+      importedStyleBlobUrls.push(blobUrl);
+      urls.push(blobUrl);
+    });
+    (Array.isArray(data.canvasStyles) ? data.canvasStyles : []).forEach((url) => {
+      if (url && !urls.includes(url)) urls.push(url);
+    });
+    return urls;
+  }
+
   function injectInlineStyles(doc, styles = []) {
+    if (!doc?.head) return;
     doc.querySelectorAll("style[data-siaw-imported-style]").forEach((node) => node.remove());
     styles.forEach((cssText, index) => {
+      if (!cssText || !String(cssText).trim()) return;
       const style = doc.createElement("style");
       style.setAttribute("data-siaw-imported-style", String(index));
       style.textContent = cssText;
@@ -289,8 +509,25 @@
     });
   }
 
+  function ensureCanvasStylesheets(doc, styleUrls = []) {
+    if (!doc?.head || !styleUrls.length) return;
+    styleUrls.forEach((href, index) => {
+      if (!href) return;
+      const existing = doc.head.querySelector(`link[data-siaw-canvas-style="${index}"]`);
+      if (existing) {
+        if (existing.getAttribute("href") !== href) existing.setAttribute("href", href);
+        return;
+      }
+      const link = doc.createElement("link");
+      link.rel = "stylesheet";
+      link.href = href;
+      link.setAttribute("data-siaw-canvas-style", String(index));
+      doc.head.appendChild(link);
+    });
+  }
+
   function injectCanvasSafety(data) {
-    const doc = editor.Canvas.getDocument();
+    const doc = editor?.Canvas?.getDocument?.();
     if (!doc) return;
 
     let base = doc.querySelector("base[data-siaw-base]");
@@ -302,6 +539,10 @@
     base.href = data.assetBaseUrl;
     applyImportedAttributes(doc.documentElement, data.htmlAttributes);
     applyImportedAttributes(doc.body, data.bodyAttributes);
+    const styleUrls = Array.isArray(data._canvasStyleUrls) ? data._canvasStyleUrls : buildCanvasStyles(data);
+    data._canvasStyleUrls = styleUrls;
+    // Apply both ways: link tags (GrapesJS-friendly) and raw <style> backup.
+    ensureCanvasStylesheets(doc, styleUrls);
     injectInlineStyles(doc, Array.isArray(data.inlineStyles) ? data.inlineStyles : []);
     doc.documentElement.classList.add("siaw-visual-edit-mode");
 
@@ -319,10 +560,802 @@
   }
 
 
+  function heroSlideHtml(src, alt, active = false) {
+    const activeClass = active ? " is-active" : "";
+    const loading = active ? "eager" : "lazy";
+    return (
+      `<div class="hc-slide${activeClass}" data-siaw-hydrated="hero-carousel" data-siaw-slideshow-slide="true">`
+      + `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt || "Slideshow image")}" draggable="false" decoding="async" loading="${loading}">`
+      + `</div>`
+    );
+  }
+
+  function heroCarouselTrack() {
+    return (editor?.getWrapper()?.find?.(".js-hc-track") || [])[0] || null;
+  }
+
+  function heroCarouselDots() {
+    return (editor?.getWrapper()?.find?.(".js-hc-dots") || [])[0] || null;
+  }
+
+  function heroSlides(track = heroCarouselTrack()) {
+    if (!track) return [];
+    return track.find?.(".hc-slide") || [];
+  }
+
+  function componentClassList(component) {
+    const raw = component?.getClasses?.();
+    if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
+    if (typeof raw === "string") return raw.split(/\s+/).filter(Boolean);
+    const attr = component?.getAttributes?.().class || "";
+    return String(attr).split(/\s+/).filter(Boolean);
+  }
+
+  function markHeroCarouselManaged(track = heroCarouselTrack()) {
+    if (!track?.addAttributes) return;
+    track.addAttributes({ "data-siaw-slideshow": "hero" });
+  }
+
+  function syncHeroCarouselDots(track = heroCarouselTrack()) {
+    const dotsWrap = heroCarouselDots();
+    if (!dotsWrap) return;
+    const slides = heroSlides(track);
+    const activeIndex = Math.max(
+      0,
+      slides.findIndex((slide) => componentClassList(slide).includes("is-active")),
+    );
+    const dotsHtml = slides.map((_slide, index) => {
+      const active = index === activeIndex ? " is-active" : "";
+      const current = index === activeIndex ? ' aria-current="true"' : "";
+      return `<button type="button" class="hc-dot${active}" data-siaw-hydrated="hero-carousel"${current}></button>`;
+    }).join("");
+    dotsWrap.components(dotsHtml);
+  }
+
+  function setActiveHeroSlide(track, index) {
+    const slides = heroSlides(track);
+    slides.forEach((slide, slideIndex) => {
+      if (slideIndex === index) {
+        if (slide.addClass) slide.addClass("is-active");
+        else {
+          const classes = new Set(componentClassList(slide));
+          classes.add("is-active");
+          slide.setClass?.(Array.from(classes).join(" "));
+        }
+      } else if (slide.removeClass) {
+        slide.removeClass("is-active");
+      } else {
+        const classes = new Set(componentClassList(slide));
+        classes.delete("is-active");
+        slide.setClass?.(Array.from(classes).join(" "));
+      }
+    });
+    syncHeroCarouselDots(track);
+  }
+
+  function findHeroCarouselContext(component) {
+    if (!component) return null;
+    let current = component;
+    while (current) {
+      const classes = componentClassList(current);
+      const attrs = current.getAttributes?.() || {};
+      if (classes.includes("hc-slide") || attrs["data-siaw-slideshow-slide"]) {
+        const track = current.parent?.() || heroCarouselTrack();
+        const slides = heroSlides(track);
+        const index = slides.indexOf(current);
+        return { track, slide: current, index: index >= 0 ? index : 0, slides };
+      }
+      if (classes.includes("js-hc-track") || attrs["data-siaw-slideshow"] === "hero") {
+        const slides = heroSlides(current);
+        return { track: current, slide: slides[0] || null, index: 0, slides };
+      }
+      if (classes.includes("hero-carousel") || classes.includes("hc-frame") || attrs["data-hero-carousel"] != null) {
+        const track = current.find?.(".js-hc-track")?.[0] || heroCarouselTrack();
+        const slides = heroSlides(track);
+        return { track, slide: slides[0] || null, index: 0, slides };
+      }
+      if (current.get?.("type") === "image") {
+        const parent = current.parent?.();
+        if (parent && componentClassList(parent).includes("hc-slide")) {
+          return findHeroCarouselContext(parent);
+        }
+      }
+      current = current.parent ? current.parent() : null;
+    }
+    return null;
+  }
+
+  function hydrateHeroCarouselFromData(data = loadedData || {}) {
+    if (!editor) return;
+    const photos = Array.isArray(data.heroCarouselPhotos) ? data.heroCarouselPhotos : [];
+    const track = heroCarouselTrack();
+    if (!track) return;
+    markHeroCarouselManaged(track);
+    const existing = track.find?.(".hc-slide") || [];
+    if (existing.length) {
+      existing.forEach((slide) => {
+        const image = slide.find?.("img")?.[0];
+        const current = image?.getAttributes?.()?.src || "";
+        const fixed = toEditorAssetUrl(current);
+        if (image && fixed && fixed !== current) image.addAttributes({ src: fixed });
+      });
+      syncHeroCarouselDots(track);
+      return;
+    }
+    if (!photos.length) return;
+
+    const slidesHtml = photos.map((photo, index) => (
+      heroSlideHtml(
+        toEditorAssetUrl(photo.src || ""),
+        photo.alt || photo.alt_en || `Slide ${index + 1}`,
+        index === 0,
+      )
+    )).join("");
+    track.components(slidesHtml);
+    syncHeroCarouselDots(track);
+  }
+
+  function hydrateReviewsFromData(data = loadedData || {}) {
+    if (!editor) return;
+    const reviews = Array.isArray(data.reviewsData) ? data.reviewsData : [];
+    if (!reviews.length) return;
+    const tracks = editor.getWrapper()?.find?.("#reviewsTrack") || [];
+    const track = tracks[0];
+    if (!track) return;
+    if ((track.find?.(".review") || []).length) return;
+
+    const cardsHtml = reviews.map((review) => {
+      const stars = Math.max(0, Math.min(5, Number(review.stars) || 5));
+      const starText = `${"★".repeat(stars)}${"☆".repeat(5 - stars)}`;
+      const text = String(review.text || "");
+      const isLong = text.length > 170;
+      const clamp = isLong ? " clamp" : "";
+      const more = isLong
+        ? '<button type="button" class="readmore-btn" data-siaw-hydrated="reviews">Read more</button>'
+        : "";
+      return (
+        `<div class="review" data-siaw-hydrated="reviews">`
+        + `<div class="review-stars">${escapeHtml(starText)}</div>`
+        + `<p class="review-text${clamp}">${escapeHtml(text)}</p>`
+        + more
+        + `<div class="review-foot"><div class="review-name">${escapeHtml(review.name || "Customer")}</div></div>`
+        + `</div>`
+      );
+    }).join("");
+    track.components(cardsHtml);
+
+    const dotsWrap = (editor.getWrapper()?.find?.("#reviewsDots") || [])[0];
+    if (dotsWrap && !(dotsWrap.find?.(".rc-dot") || []).length) {
+      const pageCount = Math.max(1, Math.ceil(reviews.length / 3));
+      const dotsHtml = Array.from({ length: pageCount }, (_item, index) => {
+        const active = index === 0 ? " active" : "";
+        return `<button type="button" class="rc-dot${active}" data-siaw-hydrated="reviews" aria-label="Review group ${index + 1}"></button>`;
+      }).join("");
+      dotsWrap.components(dotsHtml);
+    }
+  }
+
+  let imageSwapBound = false;
+  let pendingSlideshowAction = null;
+  let imagePickerState = null;
+
+  function assetSrc(asset) {
+    return asset?.getSrc?.() || asset?.get?.("src") || "";
+  }
+
+  function toEditorAssetUrl(src) {
+    const raw = String(src || "").trim();
+    if (!raw) return "";
+    if (/^(data:|blob:)/i.test(raw)) return raw;
+    const prefix = loadedData?.projectFilePrefix || `/projects/${config.projectId}/files/`;
+    const origin = window.location.origin;
+    try {
+      if (/^(https?:)?\/\//i.test(raw)) {
+        const absolute = new URL(raw, origin);
+        if (absolute.pathname.includes("/files/")) {
+          return `${origin}${absolute.pathname}${absolute.search}`;
+        }
+        return absolute.href;
+      }
+    } catch (_error) {
+      /* keep falling through */
+    }
+    if (raw.startsWith("/projects/") && raw.includes("/files/")) {
+      return `${origin}${raw}`;
+    }
+    if (raw.startsWith(prefix)) {
+      return `${origin}${raw}`;
+    }
+    const relative = raw.replace(/^\.\//, "").replace(/^\/+/, "");
+    return `${origin}${prefix}${relative.split("/").map(encodeURIComponent).join("/")}`;
+  }
+
+  function repairEditorMediaUrls(data = loadedData || {}) {
+    if (!editor) return;
+    const am = editor.AssetManager;
+    const serverAssets = Array.isArray(data.assets) ? data.assets : [];
+    const seen = new Set();
+
+    if (am) {
+      am.getAll().forEach((asset) => {
+        const current = assetSrc(asset);
+        const fixed = toEditorAssetUrl(current);
+        if (fixed && fixed !== current) asset.set({ src: fixed });
+        if (fixed) seen.add(fixed);
+      });
+      serverAssets.forEach((item) => {
+        const src = toEditorAssetUrl(item.src || item.relativePath || "");
+        if (!src || seen.has(src)) return;
+        am.add({
+          type: "image",
+          src,
+          name: item.name || src.split("/").pop(),
+          relativePath: item.relativePath || "",
+        });
+        seen.add(src);
+      });
+    }
+
+    const images = editor.getWrapper?.()?.find?.("img") || [];
+    images.forEach((image) => {
+      const current = image.getAttributes?.()?.src || "";
+      const fixed = toEditorAssetUrl(current);
+      if (fixed && fixed !== current) image.addAttributes({ src: fixed });
+    });
+  }
+
+  function collectImagePickerItems() {
+    const items = [];
+    const seen = new Set();
+    const push = (src, name = "") => {
+      const absolute = toEditorAssetUrl(src);
+      if (!absolute || seen.has(absolute)) return;
+      seen.add(absolute);
+      items.push({
+        src: absolute,
+        name: name || absolute.split("/").pop() || "image",
+      });
+    };
+
+    (Array.isArray(loadedData?.assets) ? loadedData.assets : []).forEach((item) => {
+      push(item.src || item.relativePath || "", item.name || "");
+    });
+    (Array.isArray(loadedData?.heroCarouselPhotos) ? loadedData.heroCarouselPhotos : []).forEach((item, index) => {
+      push(item.src || "", item.alt || `Slide ${index + 1}`);
+    });
+    heroSlides().forEach((slide, index) => {
+      const image = slide.find?.("img")?.[0];
+      const src = image?.getAttributes?.()?.src || "";
+      push(src, `Current slide ${index + 1}`);
+    });
+    try {
+      editor?.AssetManager?.getAll?.().forEach((asset) => {
+        push(assetSrc(asset), asset.get?.("name") || "");
+      });
+    } catch (_error) {
+      /* ignore */
+    }
+    return items;
+  }
+
+  function ensureImagePicker() {
+    let root = document.getElementById("siawImagePicker");
+    if (root) return root;
+    root = document.createElement("div");
+    root.id = "siawImagePicker";
+    root.className = "siaw-image-picker";
+    root.hidden = true;
+    root.innerHTML = `
+      <div class="siaw-image-picker-backdrop" data-image-picker-close></div>
+      <div class="siaw-image-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="siawImagePickerTitle">
+        <header class="siaw-image-picker-header">
+          <strong id="siawImagePickerTitle">Select image</strong>
+          <button type="button" class="siaw-image-picker-close" data-image-picker-close aria-label="Close">×</button>
+        </header>
+        <div class="siaw-image-picker-body">
+          <label class="siaw-image-picker-drop" data-image-picker-drop>
+            <input type="file" accept="image/*" data-image-picker-upload hidden>
+            <strong>Drop a file here or click to upload</strong>
+            <span>Uploaded images are applied to the slideshow immediately</span>
+          </label>
+          <div class="siaw-image-picker-side">
+            <div class="siaw-image-picker-url">
+              <input type="url" placeholder="https://example.com/image.jpg" data-image-picker-url>
+              <button type="button" class="secondary-btn" data-image-picker-add-url>Add URL</button>
+            </div>
+            <div class="siaw-image-picker-grid" data-image-picker-grid></div>
+            <p class="siaw-image-picker-empty" data-image-picker-empty hidden>No images yet. Upload one or paste an image URL.</p>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(root);
+
+    const uploadInput = root.querySelector("[data-image-picker-upload]");
+    const dropZone = root.querySelector("[data-image-picker-drop]");
+
+    async function handlePickerUpload(fileList) {
+      const fakeEvent = { target: { files: fileList, value: "" }, dataTransfer: { files: fileList } };
+      const uploaded = await uploadAssets(fakeEvent);
+      repairEditorMediaUrls(loadedData || {});
+      renderImagePickerGrid();
+      const first = uploaded?.[0]?.src;
+      if (first) {
+        // Uploading while the picker is open means "use this image now".
+        chooseImagePickerSrc(first);
+      }
+    }
+
+    root.querySelectorAll("[data-image-picker-close]").forEach((node) => {
+      node.addEventListener("click", () => closeImagePicker());
+    });
+    root.querySelector("[data-image-picker-add-url]")?.addEventListener("click", () => {
+      const input = root.querySelector("[data-image-picker-url]");
+      const src = toEditorAssetUrl(input?.value || "");
+      if (!src) return;
+      chooseImagePickerSrc(src);
+    });
+    uploadInput?.addEventListener("change", async (event) => {
+      try {
+        await handlePickerUpload(event.target.files);
+        event.target.value = "";
+      } catch (error) {
+        console.error(error);
+        await siawAlert(error.message || "Image upload failed.");
+      }
+    });
+    dropZone?.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      dropZone.classList.add("is-dragover");
+    });
+    dropZone?.addEventListener("dragleave", () => {
+      dropZone.classList.remove("is-dragover");
+    });
+    dropZone?.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      dropZone.classList.remove("is-dragover");
+      try {
+        await handlePickerUpload(event.dataTransfer?.files);
+      } catch (error) {
+        console.error(error);
+        await siawAlert(error.message || "Image upload failed.");
+      }
+    });
+    return root;
+  }
+
+  function renderImagePickerGrid() {
+    const root = ensureImagePicker();
+    const grid = root.querySelector("[data-image-picker-grid]");
+    const empty = root.querySelector("[data-image-picker-empty]");
+    if (!grid) return;
+    const items = collectImagePickerItems();
+    grid.innerHTML = items.map((item) => `
+      <button type="button" class="siaw-image-picker-item" data-image-src="${escapeHtml(item.src)}" title="${escapeHtml(item.name)}">
+        <img src="${escapeHtml(item.src)}" alt="" loading="lazy">
+        <span>${escapeHtml(item.name)}</span>
+      </button>
+    `).join("");
+    if (empty) empty.hidden = items.length > 0;
+    grid.querySelectorAll("[data-image-src]").forEach((button) => {
+      button.addEventListener("click", () => {
+        chooseImagePickerSrc(button.getAttribute("data-image-src") || "");
+      });
+    });
+  }
+
+  function closeImagePicker() {
+    const root = document.getElementById("siawImagePicker");
+    if (root) root.hidden = true;
+    imagePickerState = null;
+  }
+
+  function chooseImagePickerSrc(src) {
+    const absolute = toEditorAssetUrl(src);
+    const onSelect = imagePickerState?.onSelect;
+    closeImagePicker();
+    if (absolute) onSelect?.(absolute);
+  }
+
+  function openImageAssetPicker({ onSelect, title = "Select image" } = {}) {
+    repairEditorMediaUrls(loadedData || {});
+    imagePickerState = { onSelect };
+    const root = ensureImagePicker();
+    const titleNode = root.querySelector("#siawImagePickerTitle");
+    if (titleNode) titleNode.textContent = title;
+    renderImagePickerGrid();
+    root.hidden = false;
+  }
+
+  function collectHeroSlideshowForSave(track = heroCarouselTrack()) {
+    return heroSlides(track).map((slide, index) => {
+      const image = slide.find?.("img")?.[0];
+      const attrs = image?.getAttributes?.() || {};
+      const alt = String(attrs.alt || `Slide ${index + 1}`);
+      return {
+        src: String(attrs.src || ""),
+        alt,
+        alt_en: alt,
+        alt_de: alt,
+      };
+    }).filter((item) => item.src);
+  }
+
+  function addHeroSlide(src, alt = "Slideshow image") {
+    const track = heroCarouselTrack();
+    if (!track || !src) return null;
+    markHeroCarouselManaged(track);
+    const slides = heroSlides(track);
+    const wasEmpty = !slides.length;
+    track.append(heroSlideHtml(src, alt, wasEmpty));
+    const nextSlides = heroSlides(track);
+    const newIndex = Math.max(0, nextSlides.length - 1);
+    setActiveHeroSlide(track, newIndex);
+    const created = nextSlides[newIndex] || null;
+    if (created) editor.select(created.find?.("img")?.[0] || created);
+    markDirty();
+    renderSlideshowManager(created || track);
+    return created;
+  }
+
+  function reorderHeroSlides(track, fromIndex, toIndex) {
+    if (!track) return;
+    const slides = heroSlides(track);
+    if (
+      fromIndex === toIndex
+      || fromIndex < 0
+      || toIndex < 0
+      || fromIndex >= slides.length
+      || toIndex >= slides.length
+    ) {
+      return;
+    }
+    const ordered = slides.slice();
+    const [moved] = ordered.splice(fromIndex, 1);
+    ordered.splice(toIndex, 0, moved);
+    const html = ordered.map((slide, index) => {
+      const image = slide.find?.("img")?.[0];
+      const attrs = image?.getAttributes?.() || {};
+      return heroSlideHtml(
+        attrs.src || "",
+        attrs.alt || `Slide ${index + 1}`,
+        index === toIndex,
+      );
+    }).join("");
+    track.components(html);
+    setActiveHeroSlide(track, toIndex);
+    const next = heroSlides(track)[toIndex];
+    if (next) editor.select(next.find?.("img")?.[0] || next);
+    markDirty();
+    renderSlideshowManager(next || track);
+  }
+
+  async function removeHeroSlide(context) {
+    const track = context?.track || heroCarouselTrack();
+    const slides = heroSlides(track);
+    if (!track || !slides.length) return;
+    const index = Math.max(0, context?.index ?? 0);
+    const target = slides[index] || context?.slide;
+    if (!target) return;
+    if (slides.length === 1) {
+      const confirmed = await siawConfirm("Remove the last slideshow image? The carousel will be empty until you add another.", {
+        danger: true,
+        confirmLabel: "Remove",
+        title: "Remove slide",
+      });
+      if (!confirmed) return;
+    }
+    target.remove();
+    const remaining = heroSlides(track);
+    if (remaining.length) {
+      const nextIndex = Math.min(index, remaining.length - 1);
+      setActiveHeroSlide(track, nextIndex);
+      editor.select(remaining[nextIndex].find?.("img")?.[0] || remaining[nextIndex]);
+      renderSlideshowManager(remaining[nextIndex]);
+    } else {
+      syncHeroCarouselDots(track);
+      editor.select(track);
+      renderSlideshowManager(track);
+    }
+    markDirty();
+  }
+
+  function toggleComponentClass(component, className, enabled) {
+    if (!component) return;
+    if (enabled) {
+      if (component.addClass) component.addClass(className);
+      else {
+        const classes = new Set(componentClassList(component));
+        classes.add(className);
+        component.setClass?.(Array.from(classes).join(" "));
+      }
+      return;
+    }
+    if (component.removeClass) component.removeClass(className);
+    else {
+      const classes = new Set(componentClassList(component));
+      classes.delete(className);
+      component.setClass?.(Array.from(classes).join(" "));
+    }
+  }
+
+  function renderResponsiveManager(component) {
+    if (!responsiveManager) return;
+    if (!component || component.get?.("type") === "wrapper") {
+      responsiveManager.hidden = true;
+      responsiveManager.innerHTML = "";
+      return;
+    }
+    const classes = new Set(componentClassList(component));
+    const deviceHint = currentDevice === "Desktop"
+      ? "Style changes apply to the base (desktop-first) styles."
+      : `Editing ${currentDevice}. GrapesJS can store device-specific style overrides for this breakpoint.`;
+    responsiveManager.hidden = false;
+    responsiveManager.innerHTML = `
+      <div class="responsive-manager-card">
+        <strong>Responsive</strong>
+        <p class="smart-help">${escapeHtml(deviceHint)}</p>
+        <label class="responsive-check"><input type="checkbox" data-hide-desktop ${classes.has("siaw-hide-desktop") ? "checked" : ""}> Hide on desktop</label>
+        <label class="responsive-check"><input type="checkbox" data-hide-tablet ${classes.has("siaw-hide-tablet") ? "checked" : ""}> Hide on tablet</label>
+        <label class="responsive-check"><input type="checkbox" data-hide-mobile ${classes.has("siaw-hide-mobile") ? "checked" : ""}> Hide on mobile</label>
+      </div>
+    `;
+    responsiveManager.querySelector("[data-hide-desktop]")?.addEventListener("change", (event) => {
+      toggleComponentClass(component, "siaw-hide-desktop", event.target.checked);
+      markDirty();
+    });
+    responsiveManager.querySelector("[data-hide-tablet]")?.addEventListener("change", (event) => {
+      toggleComponentClass(component, "siaw-hide-tablet", event.target.checked);
+      markDirty();
+    });
+    responsiveManager.querySelector("[data-hide-mobile]")?.addEventListener("change", (event) => {
+      toggleComponentClass(component, "siaw-hide-mobile", event.target.checked);
+      markDirty();
+    });
+  }
+
+  function bindEditorShortcuts() {
+    if (!editor || editor.__siawShortcutsBound) return;
+    editor.__siawShortcutsBound = true;
+    document.addEventListener("keydown", (event) => {
+      if (!editorReady || activeEditorMode !== "safe") return;
+      const key = String(event.key || "").toLowerCase();
+      const meta = event.metaKey || event.ctrlKey;
+      const target = event.target;
+      const typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if (typing) return;
+
+      if (meta && key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        editor.UndoManager.undo();
+        return;
+      }
+      if (meta && (key === "y" || (key === "z" && event.shiftKey))) {
+        event.preventDefault();
+        editor.UndoManager.redo();
+        return;
+      }
+      if (meta && key === "d") {
+        event.preventDefault();
+        const selected = editor.getSelected();
+        if (!selected || selected.get?.("type") === "wrapper") return;
+        if (selected.get?.("copyable") === false) return;
+        const parent = selected.parent?.();
+        if (!parent) return;
+        const index = parent.components().indexOf(selected);
+        const clone = selected.clone();
+        parent.append(clone, { at: index + 1 });
+        editor.select(clone);
+        markDirty();
+        return;
+      }
+      if ((key === "delete" || key === "backspace") && !meta) {
+        const selected = editor.getSelected();
+        if (!selected || selected.get?.("type") === "wrapper") return;
+        if (selected.get?.("removable") === false) return;
+        event.preventDefault();
+        selected.remove();
+        markDirty();
+      }
+    });
+  }
+
+  function withResponsiveVisibilityCss(cssText) {
+    const css = String(cssText || "");
+    if (css.includes("siaw-responsive-visibility")) return css;
+    return `${css.trim()}\n\n${RESPONSIVE_VISIBILITY_CSS}\n`;
+  }
+
+  function renderSlideshowManager(component) {
+    if (!slideshowManager) return;
+    const context = findHeroCarouselContext(component);
+    if (!context?.track) {
+      slideshowManager.hidden = true;
+      slideshowManager.innerHTML = "";
+      return;
+    }
+    const count = context.slides.length;
+    const current = count ? context.index + 1 : 0;
+    const thumbs = context.slides.map((slide, index) => {
+      const image = slide.find?.("img")?.[0];
+      const src = toEditorAssetUrl(image?.getAttributes?.()?.src || "");
+      const active = index === context.index ? " is-active" : "";
+      return `
+        <button type="button" class="slideshow-thumb${active}" draggable="true" data-slideshow-index="${index}" title="Drag to reorder. Click to select slide ${index + 1}.">
+          ${src ? `<img src="${escapeHtml(src)}" alt="" draggable="false">` : `<span>${index + 1}</span>`}
+        </button>
+      `;
+    }).join("");
+    slideshowManager.hidden = false;
+    slideshowManager.innerHTML = `
+      <div class="slideshow-manager-card">
+        <strong>Slideshow</strong>
+        <p class="smart-help">${count ? `Slide ${current} of ${count}. Drag thumbnails to reorder. Add, swap, or remove, then save the slideshow.` : "No images yet. Add the first slideshow image, then save."}</p>
+        ${count ? `<div class="slideshow-thumbs" data-slideshow-thumbs>${thumbs}</div>` : ""}
+        <div class="slideshow-manager-actions">
+          <button type="button" class="secondary-btn" data-slideshow-add>Add image</button>
+          <button type="button" class="secondary-btn" data-slideshow-swap ${context.slide ? "" : "disabled"}>Swap image</button>
+          <button type="button" class="delete-btn" data-slideshow-remove ${context.slide ? "" : "disabled"}>Remove slide</button>
+          <button type="button" class="primary-btn" data-slideshow-save>Save slideshow</button>
+        </div>
+      </div>
+    `;
+
+    let dragFromIndex = null;
+    let suppressThumbClick = false;
+    slideshowManager.querySelectorAll("[data-slideshow-index]").forEach((button) => {
+      const index = Number(button.getAttribute("data-slideshow-index"));
+      button.addEventListener("dragstart", (event) => {
+        if (!Number.isFinite(index)) return;
+        dragFromIndex = index;
+        suppressThumbClick = false;
+        button.classList.add("is-dragging");
+        try {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", String(index));
+        } catch (_error) {
+          /* older browsers */
+        }
+      });
+      button.addEventListener("dragend", () => {
+        button.classList.remove("is-dragging");
+        slideshowManager.querySelectorAll(".slideshow-thumb.is-drop-target").forEach((node) => {
+          node.classList.remove("is-drop-target");
+        });
+        dragFromIndex = null;
+      });
+      button.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        try { event.dataTransfer.dropEffect = "move"; } catch (_error) { /* ignore */ }
+        button.classList.add("is-drop-target");
+      });
+      button.addEventListener("dragleave", () => {
+        button.classList.remove("is-drop-target");
+      });
+      button.addEventListener("drop", (event) => {
+        event.preventDefault();
+        button.classList.remove("is-drop-target");
+        let fromIndex = dragFromIndex;
+        try {
+          const raw = event.dataTransfer.getData("text/plain");
+          if (raw !== "") fromIndex = Number(raw);
+        } catch (_error) {
+          /* ignore */
+        }
+        if (!Number.isFinite(fromIndex) || !Number.isFinite(index) || fromIndex === index) return;
+        suppressThumbClick = true;
+        reorderHeroSlides(context.track, fromIndex, index);
+      });
+      button.addEventListener("click", () => {
+        if (suppressThumbClick) {
+          suppressThumbClick = false;
+          return;
+        }
+        if (!Number.isFinite(index)) return;
+        setActiveHeroSlide(context.track, index);
+        const slide = heroSlides(context.track)[index];
+        if (slide) editor.select(slide.find?.("img")?.[0] || slide);
+        renderSlideshowManager(slide || context.track);
+      });
+    });
+
+    slideshowManager.querySelector("[data-slideshow-add]")?.addEventListener("click", () => {
+      pendingSlideshowAction = { type: "add" };
+      openImageAssetPicker({
+        title: "Add slideshow image",
+        onSelect: (src) => {
+          pendingSlideshowAction = null;
+          addHeroSlide(toEditorAssetUrl(src));
+        },
+      });
+    });
+    slideshowManager.querySelector("[data-slideshow-swap]")?.addEventListener("click", () => {
+      if (!context.slide) return;
+      const image = context.slide.find?.("img")?.[0] || (context.slide.get?.("type") === "image" ? context.slide : null);
+      pendingSlideshowAction = { type: "swap", image, slide: context.slide };
+      openImageAssetPicker({
+        title: "Swap slideshow image",
+        onSelect: (src) => {
+          const absolute = toEditorAssetUrl(src);
+          pendingSlideshowAction = null;
+          if (image) image.addAttributes({ src: absolute });
+          else if (context.slide) {
+            context.slide.components(
+              `<img src="${escapeHtml(absolute)}" alt="Slideshow image" draggable="false" decoding="async" loading="eager">`,
+            );
+          }
+          markDirty();
+          renderSlideshowManager(context.slide);
+        },
+      });
+    });
+    slideshowManager.querySelector("[data-slideshow-remove]")?.addEventListener("click", () => {
+      void removeHeroSlide(context);
+    });
+    slideshowManager.querySelector("[data-slideshow-save]")?.addEventListener("click", async () => {
+      dirty = true;
+      const photos = collectHeroSlideshowForSave(context.track);
+      const saved = await saveProject({ force: true });
+      if (saved) {
+        if (loadedData) loadedData.heroCarouselPhotos = photos;
+        await siawAlert(`Slideshow saved with ${photos.length} slide${photos.length === 1 ? "" : "s"}.`);
+      }
+    });
+  }
+
+  function bindImageSwapEditing() {
+    if (!editor || imageSwapBound) return;
+    imageSwapBound = true;
+
+    editor.on("component:dblclick", (component) => {
+      if (!component || component.get("type") !== "image") return;
+      const context = findHeroCarouselContext(component);
+      pendingSlideshowAction = context
+        ? { type: "swap", image: component, slide: context.slide }
+        : { type: "swap", image: component };
+      openImageAssetPicker({
+        title: context ? "Swap slideshow image" : "Swap image",
+        onSelect: (src) => {
+          pendingSlideshowAction = null;
+          component.addAttributes({ src: toEditorAssetUrl(src) });
+          markDirty();
+          if (context) renderSlideshowManager(context.slide || component);
+        },
+      });
+    });
+
+    editor.on("asset:selected", (asset) => {
+      const src = toEditorAssetUrl(assetSrc(asset));
+      if (!src) return;
+      if (pendingSlideshowAction?.type === "add") {
+        pendingSlideshowAction = null;
+        addHeroSlide(src);
+        try { editor.AssetManager.close(); } catch (_error) { /* ignore */ }
+        return;
+      }
+      if (pendingSlideshowAction?.type === "swap" && pendingSlideshowAction.image) {
+        pendingSlideshowAction.image.addAttributes({ src });
+        const slide = pendingSlideshowAction.slide;
+        pendingSlideshowAction = null;
+        markDirty();
+        if (slide) renderSlideshowManager(slide);
+        try { editor.AssetManager.close(); } catch (_error) { /* ignore */ }
+        return;
+      }
+      const selected = editor.getSelected?.();
+      if (!selected || selected.get("type") !== "image") return;
+      selected.addAttributes({ src });
+      markDirty();
+    });
+  }
+
   function injectEditorOnlyHelpers(data = loadedData || {}) {
     const doc = editor?.Canvas?.getDocument();
     if (!doc) return;
+    repairEditorMediaUrls(data);
     forceRevealAnimationElements();
+    hydrateHeroCarouselFromData(data);
+    hydrateReviewsFromData(data);
     addRuntimeRegionNotes(data);
 
     const productGrid = doc.getElementById("productGrid");
@@ -443,6 +1476,11 @@
     return `<div class="report-stat"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`;
   }
 
+  function profileList(items, className) {
+    if (!items.length) return "";
+    return `<ul class="report-list ${className || ""}">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+  }
+
   function renderCompatibilityReport(data) {
     if (!compatibilityReport) return;
     const report = data.compatibility || {};
@@ -451,15 +1489,38 @@
     const missing = Array.isArray(report.missingResources) ? report.missingResources : [];
     const recommendations = Array.isArray(report.recommendations) ? report.recommendations : [];
     const pages = Array.isArray(report.pages) ? report.pages : [];
+    const profile = report.supportProfile || {};
 
     const regionMarkup = runtimeRegions.length
       ? runtimeRegions.slice(0, 18).map((region) => `<div class="report-region"><code>${escapeHtml(region.selector || `#${region.id}`)}</code><span>${escapeHtml(region.reason || "JavaScript-generated")}</span></div>`).join("")
       : '<p class="smart-help">No empty JavaScript-generated regions were detected in the original HTML.</p>';
     const missingMarkup = missing.length
-      ? `<div class="report-section report-danger"><strong>Missing local resources (${missing.length})</strong><ul class="report-list">${missing.slice(0, 12).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
+      ? `<div class="report-section report-danger"><strong>Missing local resources (${missing.length})</strong><ul class="report-list">${missing.slice(0, 12).map((item) => `<li>${escapeHtml(typeof item === "string" ? item : item.value || item)}</li>`).join("")}</ul></div>`
       : '<div class="report-section"><strong>Local resources</strong><p class="smart-help">No missing local files were detected.</p></div>';
     const pageMarkup = pages.length > 1
       ? `<div class="report-section"><strong>HTML pages (${pages.length})</strong><ul class="report-list">${pages.slice(0, 10).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
+      : "";
+
+    const spa = report.spaShell || {};
+    const spaMarkup = spa.isSpaShell
+      ? `<div class="report-section report-warning">
+          <strong>JavaScript app / SPA shell detected</strong>
+          <p class="smart-help">${escapeHtml(spa.guidance || "Safe Edit cannot see JS-rendered routes.")}</p>
+          <ul class="report-list">${(spa.reasons || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+          <button type="button" class="report-mode-btn" data-open-interactive>Open Interactive mode</button>
+        </div>`
+      : "";
+
+    const profileMarkup = profile.title
+      ? `<div class="report-section">
+          <strong>${escapeHtml(profile.title)}</strong>
+          <p class="smart-help">${escapeHtml(profile.summary || "")}</p>
+          <div class="support-grid">
+            <div><em>Supported</em>${profileList(profile.supported || [])}</div>
+            <div><em>Partial</em>${profileList(profile.partial || [])}</div>
+            <div><em>Unsupported</em>${profileList(profile.unsupported || [], "report-danger-text")}</div>
+          </div>
+        </div>`
       : "";
 
     compatibilityReport.innerHTML = `
@@ -468,6 +1529,8 @@
         <div class="report-type">${escapeHtml(report.websiteType || "Imported HTML website")}</div>
         <div class="report-meter"><span style="width:${score}%"></span></div>
       </div>
+      ${profileMarkup}
+      ${spaMarkup}
       <div class="report-grid">
         ${reportStat(report.directEditableEstimate || 0, "estimated editable items")}
         ${reportStat(report.runtimeRegionCount || 0, "JavaScript regions")}
@@ -487,7 +1550,457 @@
       ${pageMarkup}
       ${missingMarkup}
     `;
-    compatibilityReport.querySelector("[data-open-interactive]")?.addEventListener("click", () => setEditorMode("interactive"));
+    compatibilityReport.querySelectorAll("[data-open-interactive]").forEach((button) => {
+      button.addEventListener("click", () => setEditorMode("interactive"));
+    });
+  }
+
+  function detectLinkType(href) {
+    const value = String(href || "").trim();
+    if (!value) return "external";
+    if (value.startsWith("#")) return "section";
+    if (value.toLowerCase().startsWith("mailto:")) return "email";
+    if (value.toLowerCase().startsWith("tel:")) return "tel";
+    if (/^https?:\/\/(wa\.me|api\.whatsapp\.com)\//i.test(value) || value.toLowerCase().startsWith("whatsapp:")) {
+      return "whatsapp";
+    }
+    const pages = Array.isArray(loadedData?.compatibility?.pages)
+      ? loadedData.compatibility.pages
+      : Array.isArray(loadedData?.files)
+        ? loadedData.files.filter((item) => isHtmlPath(item))
+        : [];
+    const clean = value.split("?")[0].split("#")[0];
+    if (pages.some((page) => page === clean || page.endsWith("/" + clean) || clean.endsWith(page))) {
+      return "page";
+    }
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(value) && /\.html?(?:$|[?#])/i.test(value)) return "page";
+    return "external";
+  }
+
+  function buildHref(type, value, pages) {
+    const raw = String(value || "").trim();
+    if (type === "section") return raw.startsWith("#") ? raw : `#${raw.replace(/^#/, "")}`;
+    if (type === "email") return raw.toLowerCase().startsWith("mailto:") ? raw : `mailto:${raw.replace(/^mailto:/i, "")}`;
+    if (type === "tel") return raw.toLowerCase().startsWith("tel:") ? raw : `tel:${raw.replace(/^tel:/i, "")}`;
+    if (type === "whatsapp") {
+      if (/^https?:\/\//i.test(raw) || raw.toLowerCase().startsWith("whatsapp:")) return raw;
+      const digits = raw.replace(/[^\d]/g, "");
+      return digits ? `https://wa.me/${digits}` : "https://wa.me/";
+    }
+    if (type === "page") {
+      if (!raw) return pages[0] || "index.html";
+      return raw;
+    }
+    return raw || "#";
+  }
+
+  function linkInputValue(type, href) {
+    const value = String(href || "");
+    if (type === "email") return value.replace(/^mailto:/i, "");
+    if (type === "tel") return value.replace(/^tel:/i, "");
+    if (type === "section") return value.replace(/^#/, "");
+    if (type === "whatsapp") {
+      const match = value.match(/wa\.me\/(\d+)/i);
+      return match ? match[1] : value.replace(/^whatsapp:/i, "");
+    }
+    return value;
+  }
+
+  function renderLinkManager(component) {
+    if (!linkManager) return;
+    const tag = String(component?.get?.("tagName") || "").toLowerCase();
+    const isLink = tag === "a" || Boolean(component?.getAttributes?.().href);
+    if (!isLink || !component) {
+      linkManager.hidden = true;
+      linkManager.innerHTML = "";
+      return;
+    }
+    const attrs = component.getAttributes() || {};
+    const href = attrs.href || "";
+    const type = detectLinkType(href);
+    const pages = Array.isArray(loadedData?.compatibility?.pages)
+      ? loadedData.compatibility.pages
+      : (loadedData?.files || []).filter((item) => isHtmlPath(item));
+    const pageOptions = pages.map((page) => {
+      const selected = detectLinkType(href) === "page" && (href === page || href.startsWith(page + "#")) ? " selected" : "";
+      return `<option value="${escapeHtml(page)}"${selected}>${escapeHtml(page)}</option>`;
+    }).join("");
+
+    linkManager.hidden = false;
+    linkManager.innerHTML = `
+      <div class="link-manager-card">
+        <strong>Link manager</strong>
+        <label class="smart-field"><span>Link type</span>
+          <select data-link-type>
+            <option value="page"${type === "page" ? " selected" : ""}>Page</option>
+            <option value="section"${type === "section" ? " selected" : ""}>Section</option>
+            <option value="external"${type === "external" ? " selected" : ""}>External URL</option>
+            <option value="email"${type === "email" ? " selected" : ""}>Email</option>
+            <option value="tel"${type === "tel" ? " selected" : ""}>Telephone</option>
+            <option value="whatsapp"${type === "whatsapp" ? " selected" : ""}>WhatsApp</option>
+          </select>
+        </label>
+        <label class="smart-field" data-link-value-wrap>
+          <span data-link-label>Destination</span>
+          ${type === "page"
+            ? `<select data-link-value>${pageOptions || '<option value="">No pages</option>'}</select>`
+            : `<input data-link-value value="${escapeHtml(linkInputValue(type, href))}" placeholder="Destination">`}
+        </label>
+        <p class="smart-help">External links open in a normal browser tab from Live Preview. Section links use in-page anchors.</p>
+      </div>
+    `;
+
+    const typeSelect = linkManager.querySelector("[data-link-type]");
+    const applyLink = () => {
+      const nextType = typeSelect.value;
+      const valueEl = linkManager.querySelector("[data-link-value]");
+      const nextHref = buildHref(nextType, valueEl?.value || "", pages);
+      component.addAttributes({ href: nextHref });
+      if (nextType === "external" || nextType === "whatsapp") {
+        component.addAttributes({ target: "_blank", rel: "noopener noreferrer" });
+      }
+      markDirty();
+    };
+    typeSelect.addEventListener("change", () => {
+      const nextType = typeSelect.value;
+      const wrap = linkManager.querySelector("[data-link-value-wrap]");
+      const label = linkManager.querySelector("[data-link-label]");
+      if (label) {
+        label.textContent = nextType === "section" ? "Section id" : nextType === "whatsapp" ? "Phone number" : "Destination";
+      }
+      if (wrap) {
+        wrap.querySelector("[data-link-value]")?.remove();
+        if (nextType === "page") {
+          wrap.insertAdjacentHTML("beforeend", `<select data-link-value>${pageOptions || '<option value="">No pages</option>'}</select>`);
+        } else {
+          wrap.insertAdjacentHTML("beforeend", `<input data-link-value value="${escapeHtml(linkInputValue(nextType, href))}" placeholder="Destination">`);
+        }
+        wrap.querySelector("[data-link-value]")?.addEventListener("change", applyLink);
+        wrap.querySelector("[data-link-value]")?.addEventListener("input", applyLink);
+      }
+      applyLink();
+    });
+    linkManager.querySelector("[data-link-value]")?.addEventListener("change", applyLink);
+    linkManager.querySelector("[data-link-value]")?.addEventListener("input", applyLink);
+  }
+
+  async function pageAction(action, payload = {}) {
+    const response = await fetch(config.pagesUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken(),
+      },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Page action failed.");
+    return result;
+  }
+
+  function normalizePageDetails(pages, entryFile, pageDetails) {
+    if (Array.isArray(pageDetails) && pageDetails.length) {
+      return pageDetails.map((item) => ({
+        path: item.path || item,
+        label: item.label || String(item.path || item).split("/").pop(),
+        inNav: Boolean(item.inNav),
+        isHome: Boolean(item.isHome) || item.path === entryFile,
+      }));
+    }
+    const list = Array.isArray(pages) ? pages : [];
+    return list.map((page) => ({
+      path: page,
+      label: String(page).split("/").pop().replace(/\.html?$/i, "").replace(/[-_]/g, " "),
+      inNav: false,
+      isHome: page === entryFile,
+    }));
+  }
+
+  function renderPagesManager(pages, entryFile, pageDetails) {
+    if (!pagesManager) return;
+    const details = normalizePageDetails(pages, entryFile, pageDetails || loadedData?.compatibility?.pageDetails);
+    if (!details.length) {
+      pagesManager.innerHTML = `<div class="smart-empty">No HTML pages found.</div>`;
+      return;
+    }
+    pagesManager.innerHTML = `
+      <div class="pages-toolbar">
+        <button type="button" class="smart-action" data-page-add>Add page</button>
+      </div>
+      <p class="smart-help">Menu pages appear first. Open any page to edit it in Safe Edit.</p>
+      <div class="pages-list">
+        ${details.map((item) => `
+          <div class="pages-item${item.isHome ? " is-home" : ""}${item.inNav ? " in-nav" : ""}" data-page="${escapeHtml(item.path)}">
+            <button type="button" class="pages-open" data-page-open="${escapeHtml(item.path)}">
+              <strong>${escapeHtml(item.label)}</strong>
+              <small>${escapeHtml(item.path)}${item.isHome ? " · home" : ""}${item.inNav && !item.isHome ? " · menu" : ""}</small>
+            </button>
+            <div class="pages-item-actions">
+              <button type="button" data-page-home="${escapeHtml(item.path)}" title="Set homepage">Home</button>
+              <button type="button" data-page-dup="${escapeHtml(item.path)}" title="Duplicate">Dup</button>
+              <button type="button" data-page-rename="${escapeHtml(item.path)}" title="Rename">Rename</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+    pagesManager.querySelector("[data-page-add]")?.addEventListener("click", async () => {
+      const name = await siawPrompt("New page filename", "page.html");
+      if (!name) return;
+      try {
+        const result = await pageAction("add", { name });
+        if (loadedData) {
+          loadedData.files = Array.from(new Set([...(loadedData.files || []), result.path]));
+          if (loadedData.compatibility) {
+            loadedData.compatibility.pages = result.pages;
+            loadedData.compatibility.pageDetails = result.pageDetails;
+          }
+        }
+        renderPagesManager(result.pages, result.entryFile, result.pageDetails);
+        renderFileTree(loadedData?.files || result.pages, result.entryFile);
+        setStatus("Page added", "saved");
+      } catch (error) {
+        await siawAlert(error.message);
+      }
+    });
+    pagesManager.querySelectorAll("[data-page-open]").forEach((button) => {
+      button.addEventListener("click", () => void openProjectFile(button.getAttribute("data-page-open")));
+    });
+    pagesManager.querySelectorAll("[data-page-home]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const path = button.getAttribute("data-page-home");
+        try {
+          const response = await fetch(config.setEntryUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRFToken": csrfToken(),
+            },
+            body: JSON.stringify({ entryFile: path }),
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || "Could not set homepage.");
+          window.location.reload();
+        } catch (error) {
+          await siawAlert(error.message);
+        }
+      });
+    });
+    pagesManager.querySelectorAll("[data-page-dup]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        try {
+          const result = await pageAction("duplicate", { path: button.getAttribute("data-page-dup") });
+          if (loadedData?.compatibility) {
+            loadedData.compatibility.pages = result.pages;
+            loadedData.compatibility.pageDetails = result.pageDetails;
+          }
+          renderPagesManager(result.pages, result.entryFile, result.pageDetails);
+          setStatus("Page duplicated", "saved");
+        } catch (error) {
+          await siawAlert(error.message);
+        }
+      });
+    });
+    pagesManager.querySelectorAll("[data-page-rename]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const path = button.getAttribute("data-page-rename");
+        const next = await siawPrompt("Rename page to", path.split("/").pop());
+        if (!next) return;
+        try {
+          const result = await pageAction("rename", { path, name: next });
+          if (result.reload) {
+            window.location.reload();
+            return;
+          }
+          if (loadedData?.compatibility) {
+            loadedData.compatibility.pages = result.pages;
+            loadedData.compatibility.pageDetails = result.pageDetails;
+          }
+          renderPagesManager(result.pages, result.entryFile, result.pageDetails);
+          setStatus("Page renamed", "saved");
+        } catch (error) {
+          await siawAlert(error.message);
+        }
+      });
+    });
+  }
+
+  function assetFileUrl(path) {
+    const prefix = loadedData?.projectFilePrefix || `/projects/${config.projectId}/files/`;
+    return `${window.location.origin}${prefix}${String(path).split("/").map(encodeURIComponent).join("/")}`;
+  }
+
+  function renderAssetsManager(assets) {
+    if (!assetsManager) return;
+    const list = Array.isArray(assets) ? assets : [];
+    if (!list.length) {
+      assetsManager.innerHTML = `<div class="smart-empty">No image assets found yet. Upload one above.</div>`;
+      return;
+    }
+    assetsManager.innerHTML = list.slice(0, 80).map((path) => `
+      <button type="button" class="asset-item" data-asset="${escapeHtml(path)}">
+        <img src="${escapeHtml(assetFileUrl(path))}" alt="" loading="lazy">
+        <span>${escapeHtml(path)}</span>
+      </button>
+    `).join("");
+    assetsManager.querySelectorAll("[data-asset]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const path = button.getAttribute("data-asset");
+        const src = assetFileUrl(path);
+        if (editor?.AssetManager) {
+          editor.AssetManager.add([{ src, name: path.split("/").pop(), relativePath: path, type: "image" }]);
+        }
+        openImageAssetPicker({
+          title: "Select image",
+          onSelect: (chosen) => {
+            if (!applyUploadedSrcToPendingOrSelected(chosen)) {
+              setStatus(path, "saved");
+            }
+          },
+        });
+      });
+    });
+  }
+
+  async function refreshTreeManagers() {
+    if (!config.filesUrl) return;
+    try {
+      const [filesResponse, pagesResponse] = await Promise.all([
+        fetch(config.filesUrl, { headers: { Accept: "application/json" } }),
+        config.pagesUrl
+          ? fetch(config.pagesUrl, { headers: { Accept: "application/json" } })
+          : Promise.resolve(null),
+      ]);
+      const result = await filesResponse.json();
+      if (!filesResponse.ok) return;
+      let pageDetails = null;
+      let pages = result.pages || [];
+      let entryFile = result.entryFile || config.entryFile;
+      if (pagesResponse) {
+        const pagesResult = await pagesResponse.json();
+        if (pagesResponse.ok) {
+          pages = pagesResult.pages || pages;
+          pageDetails = pagesResult.pageDetails || null;
+          entryFile = pagesResult.entryFile || entryFile;
+        }
+      }
+      if (loadedData) {
+        loadedData.files = result.files || [];
+        if (loadedData.compatibility) {
+          loadedData.compatibility.pages = pages;
+          if (pageDetails) loadedData.compatibility.pageDetails = pageDetails;
+        }
+      }
+      renderFileTree(result.files || [], entryFile);
+      renderPagesManager(pages, entryFile, pageDetails);
+      renderAssetsManager(result.assets || []);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  async function renderSnapshotsManager() {
+    if (!snapshotsManager || !config.snapshotsUrl) return;
+    try {
+      const response = await fetch(config.snapshotsUrl, { headers: { Accept: "application/json" } });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not load restore points.");
+      const snapshots = Array.isArray(result.snapshots) ? result.snapshots : [];
+      snapshotsManager.innerHTML = `
+        <div class="snapshots-toolbar">
+          <button type="button" class="smart-action" data-snapshot-create>Save restore point</button>
+        </div>
+        ${snapshots.length
+          ? `<div class="snapshots-list">${snapshots.map((item) => `
+              <div class="snapshots-item">
+                <div><strong>${escapeHtml(item.label || item.id)}</strong><span>${escapeHtml(item.createdAt || "")}</span></div>
+                <button type="button" data-snapshot-restore="${escapeHtml(item.id)}">Restore</button>
+              </div>
+            `).join("")}</div>`
+          : '<p class="smart-help">No restore points yet.</p>'}
+      `;
+      snapshotsManager.querySelector("[data-snapshot-create]")?.addEventListener("click", async () => {
+        const label = await siawPrompt("Restore point name", "Before big edit");
+        if (!label) return;
+        const saved = await saveProject({ silent: true });
+        if (!saved && dirty) {
+          await siawAlert("Save your current changes before creating a restore point.");
+          return;
+        }
+        try {
+          const createResponse = await fetch(config.snapshotsUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRFToken": csrfToken(),
+            },
+            body: JSON.stringify({ action: "create", label }),
+          });
+          const created = await createResponse.json();
+          if (!createResponse.ok) throw new Error(created.error || "Could not save restore point.");
+          setStatus("Restore point saved", "saved");
+          renderSnapshotsManager();
+        } catch (error) {
+          await siawAlert(error.message);
+        }
+      });
+      snapshotsManager.querySelectorAll("[data-snapshot-restore]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const confirmed = await siawConfirm(
+            "Restore this snapshot? Current unsaved editor state will be replaced.",
+            { danger: true, confirmLabel: "Restore", title: "Restore snapshot" },
+          );
+          if (!confirmed) return;
+          try {
+            const restoreResponse = await fetch(config.snapshotsUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": csrfToken(),
+              },
+              body: JSON.stringify({ action: "restore", id: button.getAttribute("data-snapshot-restore") }),
+            });
+            const restored = await restoreResponse.json();
+            if (!restoreResponse.ok) throw new Error(restored.error || "Could not restore.");
+            window.location.reload();
+          } catch (error) {
+            await siawAlert(error.message);
+          }
+        });
+      });
+    } catch (error) {
+      snapshotsManager.innerHTML = `<div class="smart-empty">${escapeHtml(error.message)}</div>`;
+    }
+  }
+
+  async function exportWithValidation() {
+    const saved = await saveProject();
+    if (!saved) return;
+    try {
+      const response = await fetch(config.exportValidateUrl, { headers: { Accept: "application/json" } });
+      const report = await response.json();
+      if (!response.ok) throw new Error(report.error || "Could not validate export.");
+      if (!report.ok) {
+        const missing = (report.missingResources || []).slice(0, 8).map((item) => `${item.page}: ${item.value}`).join("\n");
+        const empty = (report.emptyLinks || []).slice(0, 4).map((item) => `${item.page}: empty ${item.attribute}`).join("\n");
+        const details = [missing, empty].filter(Boolean).join("\n");
+        const proceed = await siawConfirm(
+          `${report.summary}\n\n${details}\n\nExport anyway?`,
+          { title: "Export warnings", confirmLabel: "Export anyway" },
+        );
+        if (!proceed) return;
+      } else {
+        setStatus(report.summary || "Export looks clean", "saved");
+      }
+    } catch (error) {
+      console.error(error);
+      const proceed = await siawConfirm(
+        `${error.message}\n\nExport without validation?`,
+        { title: "Export validation failed", confirmLabel: "Export anyway" },
+      );
+      if (!proceed) return;
+    }
+    window.location.assign(config.exportUrl);
   }
 
   function interactiveWidth(device) {
@@ -503,6 +2016,36 @@
     interactiveFrame.style.boxShadow = currentDevice === "Desktop" ? "none" : "0 0 0 1px #cfd5db";
   }
 
+  function isJsAppShell() {
+    return Boolean(
+      loadedData?.ssrPreview
+      || loadedData?.preferLivePreview
+      || loadedData?.compatibility?.preferLivePreview
+      || loadedData?.compatibility?.spaShell?.isSpaShell
+      || config.ssrPreview
+      || config.preferLivePreview
+    );
+  }
+
+  function hasCapturedEditableEntry() {
+    const entry = String(loadedData?.entryFile || config.entryFile || "").toLowerCase();
+    return entry.includes("captured/") || Boolean(loadedData?.compatibility?.canSafeEdit);
+  }
+
+  function updateSafeEditShellEmpty(showSafe) {
+    if (!safeEditShellEmpty) return;
+    const show = Boolean(showSafe && isJsAppShell() && !hasCapturedEditableEntry());
+    safeEditShellEmpty.hidden = !show;
+    if (show && safeEditShellMessage) {
+      const kind = loadedData?.ssrPreview || config.ssrPreview
+        ? "This is a Nitro / SSR app"
+        : "This is a JavaScript app shell";
+      safeEditShellMessage.textContent = (
+        `${kind}. Interactive mode shows the real website. Safe Edit stays blank until you capture the rendered page as HTML.`
+      );
+    }
+  }
+
   function setEditorMode(mode) {
     if (!interactiveMode || !interactiveFrame || !canvasArea) return;
     activeEditorMode = mode === "interactive" ? "interactive" : "safe";
@@ -511,6 +2054,7 @@
     interactiveModeBtn?.classList.toggle("active", interactive);
     canvasArea.classList.toggle("interactive-active", interactive);
     interactiveMode.hidden = !interactive;
+    updateSafeEditShellEmpty(!interactive);
     if (interactive) {
       if (!interactiveFrame.src) interactiveFrame.src = loadedData?.runtimeUrl || config.runtimeUrl;
       applyInteractiveDevice();
@@ -540,21 +2084,53 @@
     const doc = editor?.Canvas?.getDocument();
     if (!doc) return;
     const regions = Array.isArray(data.compatibility?.runtimeRegions) ? data.compatibility.runtimeRegions : [];
+    const notedRoots = new Set();
+
+    function attachNote(target, selector, label) {
+      if (!target || target.querySelector("[data-siaw-editor-runtime-note]")) return false;
+      const meaningful = Array.from(target.children).some((child) => !child.hasAttribute("data-siaw-editor-only"));
+      if (meaningful || target.textContent.trim()) return false;
+      const note = doc.createElement("div");
+      note.dataset.siawEditorOnly = "true";
+      note.dataset.siawEditorRuntimeNote = "true";
+      note.className = "siaw-editor-runtime-note";
+      note.innerHTML = (
+        `<strong>${escapeHtml(label)}</strong><br>`
+        + "This region is filled by the original website script and appears in Interactive mode and Live Preview. "
+        + `Selector: <code>${escapeHtml(selector)}</code>`
+      );
+      target.appendChild(note);
+      return true;
+    }
+
     regions.forEach((region) => {
       const selector = region.selector || (region.id ? `#${region.id}` : "");
       if (!selector) return;
       let targets = [];
       try { targets = Array.from(doc.querySelectorAll(selector)); } catch (_error) { return; }
       targets.forEach((target) => {
-        if (target.querySelector("[data-siaw-editor-runtime-note]")) return;
-        const meaningful = Array.from(target.children).some((child) => !child.hasAttribute("data-siaw-editor-only"));
-        if (meaningful || target.textContent.trim()) return;
-        const note = doc.createElement("div");
-        note.dataset.siawEditorOnly = "true";
-        note.dataset.siawEditorRuntimeNote = "true";
-        note.className = "siaw-editor-runtime-note";
-        note.innerHTML = `<strong>JavaScript-generated content</strong><br>This region is filled by the original website script and appears in Interactive mode and Live Preview. Selector: <code>${escapeHtml(selector)}</code>`;
-        target.appendChild(note);
+        // Prefer one note on the carousel shell instead of separate empty track/dots boxes.
+        const carousel = target.closest?.("[data-hero-carousel], .hero-carousel, .hc-frame");
+        if (carousel && (selector.includes("js-hc-") || selector.includes("hc-track") || selector.includes("hc-dots"))) {
+          if (notedRoots.has(carousel)) return;
+          const host = carousel.matches?.(".hc-frame") ? carousel : (carousel.querySelector?.(".hc-frame") || carousel);
+          if (attachNote(host, selector, "Hero photo carousel")) {
+            notedRoots.add(carousel);
+            host.classList.add("siaw-editor-empty-carousel");
+          }
+          return;
+        }
+        const reviewsShell = target.closest?.("#reviewsCarousel, .reviews-carousel");
+        if (reviewsShell && (selector.includes("reviewsTrack") || selector.includes("reviewsDots"))) {
+          if (notedRoots.has(reviewsShell)) return;
+          const host = reviewsShell.querySelector?.("#reviewsTrack") || target;
+          if (attachNote(host, selector, "Customer reviews carousel")) {
+            notedRoots.add(reviewsShell);
+            reviewsShell.classList.add("siaw-editor-empty-carousel");
+          }
+          return;
+        }
+        attachNote(target, selector, "JavaScript-generated content");
       });
     });
   }
@@ -748,11 +2324,11 @@
     });
 
     panel.querySelectorAll("[data-nav-action]").forEach((button) => {
-      button.addEventListener("click", () => handleNavigationAction(button.dataset.navAction));
+      button.addEventListener("click", () => void handleNavigationAction(button.dataset.navAction));
     });
   }
 
-  function handleNavigationAction(action) {
+  async function handleNavigationAction(action) {
     const navigation = smartNavigationState;
     const item = currentNavigationItem();
     if (!navigation || !item) return;
@@ -768,7 +2344,12 @@
       navigation.items.splice(index + 1, 0, navigation.items.splice(index, 1)[0]);
       if (staticMode && component && container) component.move(container, {at: index + 1});
     } else if (action === "delete") {
-      if (!window.confirm(`Delete the menu item “${item.label}”?`)) return;
+      const confirmed = await siawConfirm(`Delete the menu item “${item.label}”?`, {
+        danger: true,
+        confirmLabel: "Delete",
+        title: "Delete menu item",
+      });
+      if (!confirmed) return;
       navigation.items.splice(index, 1);
       component?.remove?.();
       selectedNavigationKey = navigation.items[Math.min(index, navigation.items.length - 1)]?.key || null;
@@ -947,7 +2528,7 @@
     });
 
     panel.querySelectorAll("[data-smart-action]").forEach((button) => {
-      button.addEventListener("click", () => handleSmartAction(button.dataset.smartAction, data));
+      button.addEventListener("click", () => void handleSmartAction(button.dataset.smartAction, data));
     });
   }
 
@@ -970,7 +2551,7 @@
     };
   }
 
-  function handleSmartAction(action, data) {
+  async function handleSmartAction(action, data) {
     const components = serviceComponents();
     const component = currentSmartComponent();
     if (!component) return;
@@ -1006,10 +2587,15 @@
       editor.select(clone);
     } else if (action === "delete") {
       if (components.length <= 1) {
-        window.alert("At least one service must remain.");
+        await siawAlert("At least one service must remain.");
         return;
       }
-      if (!window.confirm(`Delete ${componentText(component, "h3") || "this service"}?`)) return;
+      const confirmed = await siawConfirm(`Delete ${componentText(component, "h3") || "this service"}?`, {
+        danger: true,
+        confirmLabel: "Delete",
+        title: "Delete service",
+      });
+      if (!confirmed) return;
       const next = components[index + 1] || components[index - 1];
       smartServiceState.delete(serviceKey(component));
       component.remove();
@@ -1061,18 +2647,27 @@
         </div>`).join("")
       : '<div class="smart-empty"><strong>No components captured yet.</strong><br><br>Open Interactive mode, click <strong>Capture component</strong>, then click the menu, review, carousel, card or application region you want to collect.</div>';
 
+    const spaDetected = Boolean(loadedData?.compatibility?.spaShell?.isSpaShell);
     captureManager.innerHTML = `
       <div class="capture-summary">
-        <strong>${runtimeSnapshot ? "Interactive page detected" : "Waiting for Interactive mode"}</strong>
-        <span>${runtimeSnapshot ? `${navigationCount} menu items and ${dynamicCount} dynamic regions found.` : "The capture bridge will analyse the running website after Interactive mode opens."}</span>
+        <strong>${spaDetected ? "SPA / JS app capture" : runtimeSnapshot ? "Interactive page detected" : "Waiting for Interactive mode"}</strong>
+        <span>${
+          spaDetected
+            ? "This project looks like a JavaScript app. Navigate in Interactive mode, then capture the rendered page for Safe Edit."
+            : runtimeSnapshot
+              ? `${navigationCount} menu items and ${dynamicCount} dynamic regions found.`
+              : "The capture bridge will analyse the running website after Interactive mode opens."
+        }</span>
       </div>
-      <button type="button" id="capturePanelStart" class="capture-panel-start">${captureWaiting ? "Click a component in the website…" : "Start component capture"}</button>
-      <div class="capture-warning"><strong>Static-copy safety</strong><span>A captured JavaScript component becomes editable HTML. Its original live behaviour is not copied automatically, so use it as a new static section or reusable design block.</span></div>
+      <button type="button" id="capturePanelRoute" class="capture-panel-start">Capture this page as editable HTML</button>
+      <button type="button" id="capturePanelStart" class="capture-panel-start capture-panel-start-secondary">${captureWaiting ? "Click a component in the website…" : "Start component capture"}</button>
+      <div class="capture-warning"><strong>Static-copy safety</strong><span>A captured page or component becomes editable HTML. The original JavaScript router is not rewritten automatically.</span></div>
       <div class="capture-list">${cards}</div>
     `;
+    captureManager.querySelector("#capturePanelRoute")?.addEventListener("click", startRouteCapture);
     captureManager.querySelector("#capturePanelStart")?.addEventListener("click", startInteractiveCapture);
     captureManager.querySelectorAll("[data-capture-action]").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         const index = Number(button.dataset.captureIndex);
         const component = capturedComponents[index];
         if (!component) return;
@@ -1087,7 +2682,7 @@
           markDirty();
         } else if (button.dataset.captureAction === "block") {
           registerCapturedBlock(component);
-          window.alert("The captured component is now available in the left Blocks panel under Captured.");
+          await siawAlert("The captured component is now available in the left Blocks panel under Captured.");
         } else if (button.dataset.captureAction === "remove") {
           capturedComponents.splice(index, 1);
           markDirty();
@@ -1103,6 +2698,57 @@
     renderCaptureManager();
     const request = () => interactiveFrame?.contentWindow?.postMessage({type: "siaw:capture:start", projectId: config.projectId}, "*");
     if (interactiveFrame?.contentWindow) window.setTimeout(request, 250);
+  }
+
+  function startRouteCapture() {
+    setEditorMode("interactive");
+    setStatus("Capturing rendered page…", "saving");
+    const request = () => interactiveFrame?.contentWindow?.postMessage({type: "siaw:route:capture", projectId: config.projectId}, "*");
+    if (interactiveFrame?.contentWindow) {
+      window.setTimeout(request, interactiveFrame.src ? 250 : 900);
+    } else {
+      window.setTimeout(request, 900);
+    }
+  }
+
+  async function persistCapturedRoute(page) {
+    if (!page?.html) {
+      await siawAlert("No rendered page HTML was returned.");
+      return;
+    }
+    if ((page.textLength || 0) < 40) {
+      const proceed = await siawConfirm(
+        "This route still looks almost empty. Wait for the app to finish rendering, then try again.\n\nSave the snapshot anyway?",
+      );
+      if (!proceed) {
+        setStatus("Capture cancelled", "error");
+        return;
+      }
+    }
+    try {
+      const response = await fetch(config.captureRouteUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken(),
+        },
+        body: JSON.stringify({
+          html: page.html,
+          routeUrl: page.routeUrl || "",
+          title: page.title || "",
+          setAsEntry: true,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not save the captured page.");
+      setStatus("Page captured", "saved");
+      await siawAlert(`${result.message || "Captured page saved."}\n\nSafe Edit will now open the static snapshot.`);
+      window.location.reload();
+    } catch (error) {
+      console.error(error);
+      setStatus("Capture failed", "error");
+      await siawAlert(error.message || "Could not save the captured page.");
+    }
   }
 
   function handleRuntimeMessage(event) {
@@ -1127,6 +2773,8 @@
       const captureTab = document.querySelector('.right-tab[data-target="capturePanel"]');
       captureTab?.click();
       markDirty();
+    } else if (data.type === "siaw:route:capture:result" && data.page) {
+      void persistCapturedRoute(data.page);
     }
   }
 
@@ -1138,8 +2786,9 @@
 
   async function uploadAssets(event) {
     const files = Array.from(event.dataTransfer?.files || event.target?.files || []);
-    if (!files.length) return;
+    if (!files.length) return [];
 
+    const uploadedAll = [];
     for (const file of files) {
       const form = new FormData();
       form.append("file", file);
@@ -1150,8 +2799,83 @@
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Image upload failed.");
-      editor.AssetManager.add(result.data || []);
+      const uploaded = (result.data || []).map((item) => ({
+        ...item,
+        src: toEditorAssetUrl(item.src || item.relativePath || ""),
+        type: "image",
+      }));
+      editor?.AssetManager?.add?.(uploaded);
+      if (loadedData) {
+        loadedData.assets = [...(loadedData.assets || []), ...uploaded];
+      }
+      uploadedAll.push(...uploaded);
     }
+    return uploadedAll;
+  }
+
+  function applyUploadedSrcToPendingOrSelected(src) {
+    const absolute = toEditorAssetUrl(src);
+    if (!absolute) return false;
+    if (pendingSlideshowAction?.type === "add") {
+      pendingSlideshowAction = null;
+      addHeroSlide(absolute);
+      return true;
+    }
+    if (pendingSlideshowAction?.type === "swap") {
+      const image = pendingSlideshowAction.image;
+      const slide = pendingSlideshowAction.slide;
+      pendingSlideshowAction = null;
+      if (image) image.addAttributes({ src: absolute });
+      markDirty();
+      if (slide) renderSlideshowManager(slide);
+      else if (image) renderSlideshowManager(image);
+      return true;
+    }
+    const selected = editor?.getSelected?.();
+    if (selected?.get?.("type") === "image") {
+      selected.addAttributes({ src: absolute });
+      markDirty();
+      const context = findHeroCarouselContext(selected);
+      if (context) renderSlideshowManager(context.slide || selected);
+      return true;
+    }
+    return false;
+  }
+
+  function bindAssetManagerOverride() {
+    if (!editor?.AssetManager || editor.__siawAmOverrideBound) return;
+    editor.__siawAmOverrideBound = true;
+    const am = editor.AssetManager;
+    const nativeOpen = typeof am.open === "function" ? am.open.bind(am) : null;
+    am.open = (options = {}) => {
+      // Keep GrapesJS from showing its own broken selector; always use ours.
+      const selectCb = typeof options.select === "function" ? options.select : null;
+      const selected = options.target || editor.getSelected?.();
+      openImageAssetPicker({
+        title: "Select image",
+        onSelect: (src) => {
+          const absolute = toEditorAssetUrl(src);
+          if (!absolute) return;
+          if (selectCb) {
+            selectCb(
+              {
+                getSrc: () => absolute,
+                get: (key) => (key === "src" ? absolute : ""),
+              },
+              true,
+            );
+            return;
+          }
+          if (applyUploadedSrcToPendingOrSelected(absolute)) return;
+          if (selected?.get?.("type") === "image") {
+            selected.addAttributes({ src: absolute });
+            markDirty();
+          }
+        },
+      });
+    };
+    // Retain a hidden escape hatch for debugging if needed.
+    am.__siawNativeOpen = nativeOpen;
   }
 
   let codeMode = config.editorMode === "code";
@@ -1228,7 +2952,7 @@
       });
       const result = await response.json();
       if (!response.ok) {
-        window.alert(result.error || "Could not open that HTML file.");
+        await siawAlert(result.error || "Could not open that HTML file.");
         return;
       }
       window.location.reload();
@@ -1242,7 +2966,7 @@
     const response = await fetch(sourceFileUrl(path), { headers: { Accept: "application/json" } });
     const result = await response.json();
     if (!response.ok) {
-      window.alert(result.error || "Could not open that file.");
+      await siawAlert(result.error || "Could not open that file.");
       return;
     }
     showCodeEditor(path, result.content || "");
@@ -1252,11 +2976,11 @@
     setStatus("All changes saved", "saved");
   }
 
-  async function saveProject({ silent = false } = {}) {
+  async function saveProject({ silent = false, force = false } = {}) {
     if (codeMode) {
       if (!codeEditorReady && !codeEditor) return false;
       if (savingPromise) return savingPromise;
-      if (!dirty && silent) return true;
+      if (!dirty && silent && !force) return true;
       clearTimeout(autosaveTimer);
       setStatus("Saving…", "saving");
       saveBtn.disabled = true;
@@ -1285,7 +3009,7 @@
         } catch (error) {
           console.error(error);
           setStatus("Save failed", "error");
-          if (!silent) window.alert(error.message);
+          if (!silent) await siawAlert(error.message);
           return false;
         } finally {
           saveBtn.disabled = false;
@@ -1297,7 +3021,7 @@
 
     if (!editor || !editorReady) return false;
     if (savingPromise) return savingPromise;
-    if (!dirty && silent) return true;
+    if (!dirty && silent && !force) return true;
 
     clearTimeout(autosaveTimer);
     setStatus("Saving…", "saving");
@@ -1305,6 +3029,7 @@
 
     savingPromise = (async () => {
       try {
+        const slideshowPhotos = collectHeroSlideshowForSave();
         const response = await fetch(config.saveUrl, {
           method: "POST",
           headers: {
@@ -1313,18 +3038,28 @@
           },
           body: JSON.stringify({
             html: editor.getHtml(),
-            css: editor.getCss(),
+            css: withResponsiveVisibilityCss(editor.getCss()),
             projectData: projectDataForSave(),
             smartServices: collectSmartServices(),
             smartNavigation: collectSmartNavigation(),
+            slideshowPhotos,
           }),
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "The project could not be saved.");
         dirty = false;
         editor.clearDirtyCount();
+        if (loadedData) {
+          loadedData.heroCarouselPhotos = slideshowPhotos;
+        }
         const synced = Array.isArray(result.synced) ? result.synced : [];
-        setStatus(synced.length ? "Saved + smart components synced" : "Saved", "saved");
+        const slideshowSynced = synced.some((item) => String(item).toLowerCase().includes("slideshow"));
+        setStatus(
+          slideshowSynced
+            ? `Saved slideshow (${slideshowPhotos.length} slides)`
+            : (synced.length ? "Saved + smart components synced" : "Saved"),
+          "saved",
+        );
         window.setTimeout(() => {
           if (!dirty) setStatus("All changes saved", "saved");
         }, synced.length ? 2200 : 1200);
@@ -1332,7 +3067,7 @@
       } catch (error) {
         console.error(error);
         setStatus("Save failed", "error");
-        if (!silent) window.alert(error.message);
+        if (!silent) await siawAlert(error.message);
         return false;
       } finally {
         saveBtn.disabled = false;
@@ -1364,7 +3099,10 @@
 
     safeModeBtn?.addEventListener("click", () => setEditorMode("safe"));
     interactiveModeBtn?.addEventListener("click", () => setEditorMode("interactive"));
+    safeEditShellInteractive?.addEventListener("click", () => setEditorMode("interactive"));
+    safeEditShellCapture?.addEventListener("click", startRouteCapture);
     captureStartBtn?.addEventListener("click", startInteractiveCapture);
+    captureRouteBtn?.addEventListener("click", startRouteCapture);
     interactiveFrame?.addEventListener("load", () => {
       window.setTimeout(() => interactiveFrame.contentWindow?.postMessage({type: "siaw:runtime:snapshot:request", projectId: config.projectId}, "*"), 350);
       if (captureWaiting) window.setTimeout(() => interactiveFrame.contentWindow?.postMessage({type: "siaw:capture:start", projectId: config.projectId}, "*"), 450);
@@ -1378,6 +3116,8 @@
         applyInteractiveDevice();
         document.querySelectorAll(".device-btn").forEach((item) => item.classList.remove("active"));
         button.classList.add("active");
+        const selected = editor.getSelected?.();
+        if (selected) renderResponsiveManager(selected);
       });
     });
 
@@ -1399,15 +3139,30 @@
 
     exportBtn.addEventListener("click", async (event) => {
       event.preventDefault();
-      const saved = await saveProject();
-      if (saved) window.location.assign(config.exportUrl);
+      await exportWithValidation();
+    });
+
+    assetUploadInput?.addEventListener("change", async (event) => {
+      try {
+        await uploadAssets(event);
+        await refreshTreeManagers();
+        setStatus("Image uploaded", "saved");
+      } catch (error) {
+        await siawAlert(error.message);
+      } finally {
+        event.target.value = "";
+      }
     });
 
     notice.querySelector("button").addEventListener("click", () => notice.classList.add("hidden"));
 
-    document.getElementById("restoreForm").addEventListener("submit", (event) => {
-      const confirmed = window.confirm("Restore the original uploaded website? All visual-editor changes will be removed.");
-      if (!confirmed) event.preventDefault();
+    document.getElementById("restoreForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const confirmed = await siawConfirm(
+        "Restore the original uploaded website? All visual-editor changes will be removed.",
+        { danger: true, confirmLabel: "Restore", title: "Restore original" },
+      );
+      if (confirmed) event.target.submit();
     });
 
     document.addEventListener("keydown", (event) => {
@@ -1424,13 +3179,250 @@
     });
   }
 
+  const jsBuildOverlay = document.getElementById("jsBuildOverlay");
+  const jsBuildTitle = document.getElementById("jsBuildTitle");
+  const jsBuildMessage = document.getElementById("jsBuildMessage");
+  const jsBuildLog = document.getElementById("jsBuildLog");
+  const jsBuildRetry = document.getElementById("jsBuildRetry");
+  const jsBuildSkip = document.getElementById("jsBuildSkip");
+  const jsBuildProgress = document.getElementById("jsBuildProgress");
+  const jsBuildProgressBar = document.getElementById("jsBuildProgressBar");
+  const jsBuildProgressTrack = document.getElementById("jsBuildProgressTrack");
+  const jsBuildPercent = document.getElementById("jsBuildPercent");
+  const jsBuildPhase = document.getElementById("jsBuildPhase");
+  let jsBuildPollTimer = null;
+  let jsBuildSkipped = false;
+  let jsBuildShownProgress = 0;
+
+  const JS_BUILD_PHASE_LABELS = {
+    pending: "Ready",
+    queued: "Queued",
+    install: "Installing",
+    build: "Building",
+    export: "Exporting",
+    finalize: "Finalizing",
+    done: "Complete",
+  };
+
+  function estimateJsBuildProgress(status) {
+    if (typeof status?.progress === "number" && Number.isFinite(status.progress)) {
+      return Math.max(0, Math.min(100, Math.round(status.progress)));
+    }
+    const state = status?.status || "idle";
+    if (state === "succeeded") return 100;
+    if (state === "failed") return Math.max(jsBuildShownProgress, 1);
+    if (state === "pending") return 0;
+    const message = String(status?.message || "").toLowerCase();
+    if (message.includes("queued")) return 2;
+    if (message.includes("install")) return Math.max(jsBuildShownProgress, 10);
+    if (message.includes("build")) return Math.max(jsBuildShownProgress, 65);
+    if (message.includes("export") || message.includes("locat")) return Math.max(jsBuildShownProgress, 93);
+    return Math.max(jsBuildShownProgress, 5);
+  }
+
+  function renderJsBuildProgress(status) {
+    if (!jsBuildProgress) return;
+    const state = status?.status || "idle";
+    const active = state === "running" || state === "pending" || state === "failed" || state === "succeeded";
+    jsBuildProgress.hidden = !active;
+    if (!active) return;
+
+    let next = estimateJsBuildProgress(status);
+    // Never let the bar jump backwards while still running.
+    if (state === "running" || state === "pending") {
+      next = Math.max(jsBuildShownProgress, next);
+    }
+    if (state === "succeeded") next = 100;
+    jsBuildShownProgress = next;
+
+    if (jsBuildProgressBar) jsBuildProgressBar.style.width = `${next}%`;
+    if (jsBuildPercent) jsBuildPercent.textContent = `${next}%`;
+    if (jsBuildProgressTrack) jsBuildProgressTrack.setAttribute("aria-valuenow", String(next));
+    if (jsBuildPhase) {
+      const phaseKey = String(status?.phase || "").toLowerCase();
+      jsBuildPhase.textContent = JS_BUILD_PHASE_LABELS[phaseKey]
+        || (state === "failed" ? "Failed" : state === "succeeded" ? "Complete" : "Working");
+    }
+  }
+
+  function renderJsBuildStatus(status) {
+    if (!jsBuildOverlay) return;
+    const state = status?.status || "idle";
+    const needsBuild = Boolean(status?.needsBuild);
+    if (jsBuildSkipped || (!needsBuild && state !== "running" && state !== "pending" && state !== "failed")) {
+      jsBuildOverlay.hidden = true;
+      return;
+    }
+    jsBuildOverlay.hidden = false;
+    if (jsBuildTitle) {
+      jsBuildTitle.textContent = state === "failed"
+        ? "Build failed"
+        : state === "succeeded"
+          ? "Build complete"
+          : "Building project visuals";
+    }
+    if (jsBuildMessage) {
+      jsBuildMessage.textContent = status?.message
+        || (status?.framework ? `Detected ${status.framework}. Installing and building…` : "Installing dependencies and building…");
+    }
+    renderJsBuildProgress(status);
+    if (jsBuildLog) {
+      if (status?.logTail) {
+        jsBuildLog.hidden = false;
+        jsBuildLog.textContent = status.logTail;
+        jsBuildLog.scrollTop = jsBuildLog.scrollHeight;
+      } else {
+        jsBuildLog.hidden = true;
+        jsBuildLog.textContent = "";
+      }
+    }
+    if (jsBuildRetry) jsBuildRetry.hidden = state !== "failed";
+    if (jsBuildSkip) jsBuildSkip.hidden = !(state === "failed" || state === "pending" || state === "running");
+  }
+
+  async function pollJsBuildStatus() {
+    if (!config.buildStatusUrl) return null;
+    const response = await fetch(config.buildStatusUrl, { headers: { Accept: "application/json" } });
+    const status = await response.json();
+    if (!response.ok) throw new Error(status.error || "Could not read build status.");
+    renderJsBuildStatus(status);
+    return status;
+  }
+
+  function looksLikeMissingHtmlButSsrBuild(status) {
+    const message = String(status?.message || "").toLowerCase();
+    const log = String(status?.logTail || "").toLowerCase();
+    return (
+      message.includes("no html was found")
+      || log.includes("dist/nitro.json")
+      || log.includes("[nitro]")
+      || log.includes("npx vite preview")
+    );
+  }
+
+  async function startJsBuildAndWait(options = {}) {
+    if (!config.buildStartUrl) return null;
+    const preferReuse = Boolean(options.reuseExisting);
+    setStatus(preferReuse ? "Starting SSR preview…" : "Building JS project…", "saving");
+    jsBuildShownProgress = preferReuse ? 90 : 0;
+    renderJsBuildStatus({
+      ...(config.jsBuild || {}),
+      status: "running",
+      needsBuild: true,
+      progress: preferReuse ? 90 : 2,
+      phase: preferReuse ? "preview" : "queued",
+      message: preferReuse ? "Starting SSR preview from existing build… 90%" : "Build queued… 2%",
+    });
+
+    async function postStart(reuseExisting) {
+      const startResponse = await fetch(config.buildStartUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken(),
+        },
+        body: JSON.stringify({ reuseExisting: Boolean(reuseExisting) }),
+      });
+      const status = await startResponse.json();
+      if (!startResponse.ok) throw new Error(status.error || "Could not start build.");
+      return status;
+    }
+
+    let status = await postStart(preferReuse);
+    // If a previous Nitro build failed only because HTML was missing, reuse dist/server.
+    if (
+      !preferReuse
+      && status.status === "failed"
+      && looksLikeMissingHtmlButSsrBuild(status)
+    ) {
+      status = await postStart(true);
+    }
+    renderJsBuildStatus(status);
+
+    while (status.status === "running" || status.status === "pending") {
+      await new Promise((resolve) => {
+        jsBuildPollTimer = window.setTimeout(resolve, 800);
+      });
+      status = await pollJsBuildStatus();
+    }
+
+    if (status.status === "succeeded") {
+      setStatus(status.previewMode === "ssr" ? "SSR preview ready" : "Build succeeded", "saved");
+      // Vite/JS/SSR builds open as a live website preview (not empty-shell Safe Edit).
+      window.location.href = config.previewUrl || window.location.href;
+      return status;
+    }
+    if (status.status === "failed") {
+      // One more recovery attempt for older failed Nitro imports.
+      if (!preferReuse && looksLikeMissingHtmlButSsrBuild(status)) {
+        return startJsBuildAndWait({ reuseExisting: true });
+      }
+      setStatus("Build failed", "error");
+    }
+    return status;
+  }
+
+  async function ensureJsBuildReady() {
+    const initial = config.jsBuild || {};
+    if (jsBuildSkipped) return true;
+    if (!initial.needsBuild && initial.status !== "pending" && initial.status !== "running") {
+      return true;
+    }
+    renderJsBuildStatus(initial);
+    jsBuildRetry?.addEventListener("click", () => {
+      void startJsBuildAndWait();
+    });
+    jsBuildSkip?.addEventListener("click", async () => {
+      if (jsBuildPollTimer) window.clearTimeout(jsBuildPollTimer);
+      if (config.buildSkipUrl) {
+        await fetch(config.buildSkipUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrfToken(),
+          },
+          body: "{}",
+        });
+      }
+      jsBuildSkipped = true;
+      if (jsBuildOverlay) jsBuildOverlay.hidden = true;
+      setStatus("Continuing without build", "dirty");
+      window.location.reload();
+    });
+    if (initial.status === "failed") {
+      if (looksLikeMissingHtmlButSsrBuild(initial)) {
+        await startJsBuildAndWait({ reuseExisting: true });
+        return false;
+      }
+      return false;
+    }
+    await startJsBuildAndWait();
+    return false;
+  }
+
   async function start() {
     try {
+      const buildReady = await ensureJsBuildReady();
+      if (!buildReady && !jsBuildSkipped) {
+        // Waiting for build reload or user action.
+        if ((config.jsBuild || {}).status === "failed") {
+          bindInterface();
+        }
+        return;
+      }
+
       const response = await fetch(config.dataUrl, { headers: { Accept: "application/json" } });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Project data could not be loaded.");
       loadedData = data;
       renderFileTree(Array.isArray(data.files) ? data.files : [], data.entryFile || config.entryFile);
+      renderPagesManager(
+        data.compatibility?.pages || (data.files || []).filter((item) => isHtmlPath(item)),
+        data.entryFile || config.entryFile,
+        data.compatibility?.pageDetails,
+      );
+      void refreshTreeManagers();
+      void renderSnapshotsManager();
 
       if (data.mode === "code" || config.editorMode === "code") {
         showCodeEditor(data.entryFile || config.entryFile, data.content || "");
@@ -1456,6 +3448,20 @@
 
       showVisualEditorShell();
       capturedComponents = Array.isArray(data.projectData?.siawCaptures) ? data.projectData.siawCaptures.slice(0, 30) : [];
+      const preferLive = Boolean(
+        data.preferLivePreview
+        || data.compatibility?.preferLivePreview
+        || data.compatibility?.spaShell?.isSpaShell
+        || config.preferLivePreview
+      );
+      const params = new URLSearchParams(window.location.search);
+      const requestedMode = (params.get("mode") || config.defaultViewMode || "").toLowerCase();
+      const forceSafe = requestedMode === "safe" || params.get("edit") === "1";
+      if (preferLive && notice) {
+        notice.innerHTML = `<strong>Live website mode:</strong> This entry is a JS/Vite app shell. Interactive mode shows the real site. Use <em>Capture this page</em> before Safe Edit. <a href="${config.previewUrl || "#"}" style="color:inherit;font-weight:700;margin-left:6px">Open full preview</a> <button type="button" aria-label="Close notice">×</button>`;
+        notice.classList.remove("hidden");
+        notice.querySelector("button")?.addEventListener("click", () => notice.classList.add("hidden"));
+      }
 
       let editorRef = null;
       editor = grapesjs.init({
@@ -1477,18 +3483,26 @@
           ],
         },
         canvas: {
-          styles: data.canvasStyles,
+          styles: (() => {
+            const styleUrls = buildCanvasStyles(data);
+            data._canvasStyleUrls = styleUrls;
+            return styleUrls;
+          })(),
           frameStyle: "body{min-height:100vh;} .gjs-selected{outline:2px solid #ff4545!important}",
         },
         assetManager: {
           assets: data.assets,
           multiUpload: true,
+          autoAdd: true,
           uploadFile: async (event) => {
             try {
-              await uploadAssets(event);
+              const uploaded = await uploadAssets(event);
+              const first = uploaded?.[0]?.src;
+              if (first) applyUploadedSrcToPendingOrSelected(first);
+              try { editor.AssetManager.close(); } catch (_error) { /* ignore */ }
             } catch (error) {
               console.error(error);
-              window.alert(error.message);
+              await siawAlert(error.message);
             }
           },
         },
@@ -1502,7 +3516,91 @@
       editorRef = editor;
 
       registerProtectedComponents(editor);
+      registerLayoutComponents(editor);
+      bindAssetManagerOverride();
+      bindImageSwapEditing();
+      bindEditorShortcuts();
+      try {
+        const imageType = editor.DomComponents.getType("image");
+        const ImageModel = imageType?.model;
+        const ImageView = imageType?.view;
+        if (ImageModel) {
+          const imageTypeConfig = {
+            model: ImageModel.extend({
+              defaults: {
+                ...ImageModel.prototype.defaults,
+                traits: [
+                  { type: "text", name: "alt", label: "Alt text" },
+                  { type: "text", name: "src", label: "Image source" },
+                  {
+                    type: "button",
+                    text: "Swap image…",
+                    full: true,
+                    command: "open-assets",
+                  },
+                ],
+              },
+            }),
+          };
+          if (ImageView) {
+            imageTypeConfig.view = ImageView.extend({
+              onActive(ev) {
+                if (ev) {
+                  ev.preventDefault?.();
+                  ev.stopPropagation?.();
+                }
+                const selected = this.model;
+                const context = findHeroCarouselContext(selected);
+                pendingSlideshowAction = context
+                  ? { type: "swap", image: selected, slide: context.slide }
+                  : { type: "swap", image: selected };
+                openImageAssetPicker({
+                  title: context ? "Swap slideshow image" : "Swap image",
+                  onSelect: (src) => {
+                    pendingSlideshowAction = null;
+                    selected.addAttributes({ src: toEditorAssetUrl(src) });
+                    markDirty();
+                    if (context) renderSlideshowManager(context.slide || selected);
+                  },
+                });
+              },
+            });
+          }
+          editor.DomComponents.addType("image", imageTypeConfig);
+          editor.Commands.add("open-assets", {
+            run(ed, _sender, options = {}) {
+              const selected = options.target || ed.getSelected?.();
+              const context = findHeroCarouselContext(selected);
+              pendingSlideshowAction = context
+                ? { type: "swap", image: selected, slide: context.slide }
+                : (selected?.get?.("type") === "image" ? { type: "swap", image: selected } : null);
+              openImageAssetPicker({
+                title: context ? "Swap slideshow image" : "Swap image",
+                onSelect: (src) => {
+                  const absolute = toEditorAssetUrl(src);
+                  pendingSlideshowAction = null;
+                  if (selected?.get?.("type") === "image") {
+                    selected.addAttributes({ src: absolute });
+                    markDirty();
+                    if (context) renderSlideshowManager(context.slide || selected);
+                  }
+                },
+              });
+            },
+          });
+        }
+      } catch (_error) {
+        // Keep default GrapesJS image traits if the local build differs.
+      }
       registerBlocks(editor, data);
+      try {
+        editor.BlockManager.getCategories().each((category) => {
+          const id = category.get("id") || category.id;
+          if (id === "Layout") category.set("open", true);
+        });
+      } catch (_error) {
+        // Categories API differs slightly across GrapesJS builds.
+      }
 
       const canvasReady = new Promise((resolve) => {
         let resolved = false;
@@ -1526,22 +3624,41 @@
       } else {
         editor.setComponents(data.html);
       }
+      repairEditorMediaUrls(data);
 
-      window.setTimeout(() => {
+      // setComponents / loadProjectData can rebuild the canvas frame and drop styles.
+      const reapplySiteCss = () => {
         injectCanvasSafety(data);
         injectEditorOnlyHelpers(data);
+      };
+      window.setTimeout(reapplySiteCss, 50);
+      window.setTimeout(reapplySiteCss, 250);
+      window.setTimeout(() => {
+        reapplySiteCss();
         capturedComponents.forEach(registerCapturedBlock);
         renderSmartManager(data);
         renderCompatibilityReport(data);
         renderCaptureManager();
-      }, 120);
+        renderPagesManager(
+          data.compatibility?.pages || [],
+          data.entryFile || config.entryFile,
+          data.compatibility?.pageDetails,
+        );
+        void renderSnapshotsManager();
+      }, 500);
 
       editor.on("update", markDirty);
       editor.on("component:selected", (component) => {
         protectedHint.hidden = !componentIsInsideProtected(component);
+        renderLinkManager(component);
+        renderSlideshowManager(component);
+        renderResponsiveManager(component);
       });
       editor.on("component:deselected", () => {
         protectedHint.hidden = true;
+        renderLinkManager(null);
+        renderSlideshowManager(null);
+        renderResponsiveManager(null);
       });
       editor.on("asset:add", markDirty);
       editor.on("component:update:attributes", (component) => {
@@ -1556,10 +3673,18 @@
       });
 
       bindInterface();
+      if (preferLive && !forceSafe) {
+        setEditorMode("interactive");
+        setStatus("Interactive live preview", "saved");
+      } else if (requestedMode === "interactive") {
+        setEditorMode("interactive");
+      }
       editorReady = true;
       dirty = false;
       editor.clearDirtyCount();
-      setStatus("All changes saved", "saved");
+      if (!(preferLive && !forceSafe)) {
+        setStatus("All changes saved", "saved");
+      }
     } catch (error) {
       console.error(error);
       setStatus("Load failed", "error");

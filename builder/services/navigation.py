@@ -154,7 +154,8 @@ def _local_script_texts(source_root: Path, entry_file: str, html_text: str) -> l
         except ValueError:
             continue
         if target.is_file():
-            result.append(("external", target.relative_to(source_root).as_posix(), target.read_text(encoding="utf-8", errors="replace")))
+            relative_path = target.resolve().relative_to(source_root.resolve()).as_posix()
+            result.append(("external", relative_path, target.read_text(encoding="utf-8", errors="replace")))
     return result
 
 

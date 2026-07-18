@@ -52,8 +52,11 @@ ALLOWED_BASENAMES = {
     "rollup.config.js", "babel.config.js", "postcss.config.js", "tailwind.config.js",
     "tailwind.config.ts", "eslint.config.js", "eslint.config.mjs", ".eslintrc",
     ".eslintrc.js", ".eslintrc.cjs", ".eslintrc.json", ".prettierrc",
-    ".prettierrc.json", ".prettierrc.js", ".babelrc", ".nvmrc", ".node-version",
-    ".python-version", "runtime.txt", "gunicorn.conf.py",
+    ".prettierrc.json", ".prettierrc.js", ".prettierrc.cjs", ".prettierrc.yaml",
+    ".prettierignore", ".eslintignore", ".stylelintignore", ".npmignore",
+    ".dockerignore", ".gitignore", ".gitattributes", ".editorconfig",
+    ".babelrc", ".nvmrc", ".node-version", ".python-version", "runtime.txt",
+    "gunicorn.conf.py", ".browserslistrc", ".npmrc", ".yarnrc", ".yarnrc.yml",
 }
 
 BLOCKED_SUFFIXES = {
@@ -170,14 +173,24 @@ def _should_skip_path(parts: tuple[str, ...]) -> bool:
     return False
 
 
+def _is_blocked_file(path: PurePosixPath) -> bool:
+    suffix = Path(path.name).suffix.lower()
+    return suffix in BLOCKED_SUFFIXES
+
+
 def _is_allowed_file(path: PurePosixPath) -> bool:
     name = path.name.lower()
     suffix = Path(path.name).suffix.lower()
-    if suffix in BLOCKED_SUFFIXES:
+    if _is_blocked_file(path):
         return False
     if name.startswith(".env"):
         return True
     if name in ALLOWED_BASENAMES:
+        return True
+    # Tooling ignore/rc files: .prettierignore, .eslintignore, .nvmrc, etc.
+    if name.endswith("ignore") or name.endswith("rc") or name.endswith("rc.js") or name.endswith("rc.cjs"):
+        return True
+    if name.startswith(".") and suffix in {".json", ".yml", ".yaml", ".toml", ".js", ".cjs", ".mjs"}:
         return True
     if not suffix:
         return name in {"license", "licence", "readme", "makefile", "dockerfile", "procfile", "gemfile"}
@@ -199,8 +212,11 @@ def _validate_member(info: zipfile.ZipInfo) -> PurePosixPath | None:
         raise ValidationError(f"Symbolic links are not allowed: {info.filename}")
 
     if not info.is_dir():
+        if _is_blocked_file(path):
+            raise ValidationError(f"Blocked file type in archive: {info.filename}")
         if not _is_allowed_file(path):
-            raise ValidationError(f"Unsupported file type in archive: {info.filename}")
+            # Skip unknown tooling/config files instead of failing GitHub/repo imports.
+            return None
     return path
 
 
