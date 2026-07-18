@@ -238,6 +238,35 @@ class UserLoginView(LoginView):
     def get_success_url(self):
         return _safe_post_login_url(super().get_success_url())
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        from .services.demo_user import demo_credentials, ensure_demo_user
+
+        try:
+            ensure_demo_user()
+        except Exception:
+            # Still show the demo hint even if the database is briefly unavailable.
+            pass
+        # Prefill the known demo account on first paint (GET only).
+        if self.request.method == "GET" and not kwargs.get("data"):
+            creds = demo_credentials()
+            kwargs["initial"] = {
+                "username": creds["username"],
+                "password": creds["password"],
+            }
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        from .services.demo_user import demo_credentials, ensure_demo_user
+
+        try:
+            ensure_demo_user()
+        except Exception:
+            pass
+        context = super().get_context_data(**kwargs)
+        context["demo_account"] = demo_credentials()
+        return context
+
 
 @require_http_methods(["GET", "POST"])
 def signup(request):

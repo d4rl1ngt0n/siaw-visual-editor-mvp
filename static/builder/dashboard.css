@@ -307,6 +307,46 @@ button, input, textarea { font: inherit; }
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
+.auth-demo {
+  margin: 0 0 22px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #f5f1ea;
+}
+.auth-demo-label {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--accent-dark);
+}
+.auth-demo-line {
+  margin: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--ink);
+}
+.auth-demo-line + .auth-demo-line { margin-top: 6px; }
+.auth-demo-line span { color: var(--muted); font-weight: 600; }
+.auth-demo-line code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  background: rgba(255, 255, 255, .7);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.auth-demo-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
 .auth-errors {
   padding: 12px 14px;
   border-radius: 12px;

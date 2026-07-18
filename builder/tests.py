@@ -916,6 +916,49 @@ class AIWebsiteBuilderTests(TestCase):
         self.assertContains(response, "Start building now")
         self.assertContains(response, "data-hero-edit")
         self.assertContains(response, "Prompt a site. Edit by hand.")
+        self.assertContains(response, 'data-site-edit="hero.headline"')
+        # Django runs tests with DEBUG=False, so local edit chrome stays off by default.
+        self.assertNotContains(response, 'data-site-edit="1"')
+        self.assertNotContains(response, "site-edit.js")
+
+    def test_site_edit_chrome_enabled_when_debug_on_localhost(self):
+        with self.settings(DEBUG=True):
+            response = self.client.get(reverse("builder:dashboard"), HTTP_HOST="127.0.0.1")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-site-edit="1"')
+        self.assertContains(response, "site-edit.js")
+
+    def test_site_edit_save_updates_template_on_localhost(self):
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parents[1] / "templates" / "builder" / "dashboard.html"
+        original = path.read_text(encoding="utf-8")
+        try:
+            with self.settings(DEBUG=True):
+                response = self.client.post(
+                    reverse("builder:save_site_edit"),
+                    data=json.dumps({
+                        "edits": [{"key": "hero.lead", "value": "Local edit smoke test.", "kind": "text"}],
+                    }),
+                    content_type="application/json",
+                    HTTP_HOST="127.0.0.1",
+                )
+            self.assertEqual(response.status_code, 200, response.content)
+            self.assertTrue(response.json()["ok"])
+            self.assertIn("Local edit smoke test.", path.read_text(encoding="utf-8"))
+        finally:
+            path.write_text(original, encoding="utf-8")
+
+    def test_site_edit_save_blocked_when_debug_off(self):
+        response = self.client.post(
+            reverse("builder:save_site_edit"),
+            data=json.dumps({
+                "edits": [{"key": "hero.lead", "value": "Should not write.", "kind": "text"}],
+            }),
+            content_type="application/json",
+            HTTP_HOST="127.0.0.1",
+        )
+        self.assertEqual(response.status_code, 403)
 
     def test_project_thumbnail_uses_hero_image(self):
         from builder.services.thumbnails import project_thumbnail
@@ -931,7 +974,28 @@ class AIWebsiteBuilderTests(TestCase):
         self.assertEqual(thumb["kind"], "image")
         self.assertIn("unsplash.com", thumb["src"])
 
+    def test_login_shows_and_accepts_demo_account(self):
+        from django.contrib.auth.models import User
+
+        page = self.client.get(reverse("builder:login"))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Demo account")
+        self.assertContains(page, "siawdemo123")
+        self.assertContains(page, 'value="demo"')
+        self.assertTrue(User.objects.filter(username="demo").exists())
+
+        login = self.client.post(
+            reverse("builder:login"),
+            data={"username": "demo", "password": "siawdemo123"},
+        )
+        self.assertEqual(login.status_code, 302)
+        dash = self.client.get(reverse("builder:dashboard"))
+        self.assertContains(dash, "Log out")
+        self.assertContains(dash, "demo")
+
     def test_signup_login_logout_and_pricing(self):
+        from django.contrib.auth.models import User
+
         pricing = self.client.get(reverse("builder:pricing"))
         self.assertEqual(pricing.status_code, 200)
         self.assertContains(pricing, "Pro")

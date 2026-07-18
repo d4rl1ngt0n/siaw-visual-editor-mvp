@@ -38,17 +38,24 @@ class SignUpForm(UserCreationForm):
 class LoginForm(AuthenticationForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Show prefilled demo password in the input (normally PasswordInput clears it).
+        self.fields["password"].widget.render_value = True
+        if not self.is_bound:
+            if self.initial.get("username"):
+                self.fields["username"].initial = self.initial["username"]
+            if self.initial.get("password"):
+                self.fields["password"].initial = self.initial["password"]
         self.fields["username"].widget.attrs.update(
             {
                 "autocomplete": "username",
-                "placeholder": "your-studio",
+                "placeholder": "demo",
                 "spellcheck": "false",
             }
         )
         self.fields["password"].widget.attrs.update(
             {
                 "autocomplete": "current-password",
-                "placeholder": "Your password",
+                "placeholder": "siawdemo123",
             }
         )
 

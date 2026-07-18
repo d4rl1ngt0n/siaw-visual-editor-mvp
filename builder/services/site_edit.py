@@ -20,7 +20,8 @@ def site_edit_allowed(request: HttpRequest | None) -> bool:
         return False
     if getattr(settings, "SIAW_SITE_EDIT", True) is False:
         return False
-    host = (request.get_host() or "").split(":", 1)[0].lower()
+    raw_host = request.META.get("HTTP_HOST") or request.META.get("SERVER_NAME") or ""
+    host = str(raw_host).split(":", 1)[0].lower()
     return host in LOCAL_HOSTS or host.endswith(".localhost")
 
 

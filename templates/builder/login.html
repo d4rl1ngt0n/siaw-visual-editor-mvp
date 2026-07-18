@@ -33,6 +33,15 @@
         <p class="auth-lead">Continue editing your sites and export when you are ready.</p>
       </header>
 
+      {% if demo_account %}
+      <aside class="auth-demo" aria-label="Demo account">
+        <p class="auth-demo-label">Demo account</p>
+        <p class="auth-demo-line"><span>Username</span> <code>{{ demo_account.username }}</code></p>
+        <p class="auth-demo-line"><span>Password</span> <code>{{ demo_account.password }}</code></p>
+        <p class="auth-demo-note">Fields below are prefilled. Click Log in to try the workspace.</p>
+      </aside>
+      {% endif %}
+
       <form method="post" class="auth-form" novalidate>
         {% csrf_token %}
         {% if form.non_field_errors %}

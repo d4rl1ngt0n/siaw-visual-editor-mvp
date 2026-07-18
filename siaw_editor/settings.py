@@ -125,6 +125,11 @@ LOGIN_URL = "builder:login"
 LOGIN_REDIRECT_URL = "builder:dashboard"
 LOGOUT_REDIRECT_URL = "builder:dashboard"
 
+# Default account shown on the login form for local / MVP demos.
+SIAW_DEMO_USERNAME = os.environ.get("SIAW_DEMO_USERNAME", "demo")
+SIAW_DEMO_PASSWORD = os.environ.get("SIAW_DEMO_PASSWORD", "siawdemo123")
+SIAW_DEMO_EMAIL = os.environ.get("SIAW_DEMO_EMAIL", "demo@siaw.local")
+
 # Local MVP upload limits. ZIP validation also enforces independent limits.
 DATA_UPLOAD_MAX_MEMORY_SIZE = 30 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
