@@ -25,6 +25,80 @@
 })();
 
 (() => {
+  const root = document.querySelector("[data-hero-edit]");
+  if (!root) return;
+
+  const headline = root.querySelector("[data-hero-headline]");
+  const status = root.querySelector("[data-hero-edit-status]");
+  const caret = root.querySelector("[data-hero-caret]");
+  if (!headline) return;
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const lines = [
+    "Prompt a site. Edit by hand.",
+    "Click any line. Rewrite it live.",
+  ];
+
+  if (reduceMotion) {
+    if (status) status.textContent = "Click to edit";
+    return;
+  }
+
+  const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+  const typeText = async (el, text) => {
+    el.textContent = "";
+    el.classList.add("is-typing");
+    if (caret) {
+      caret.hidden = false;
+      el.after(caret);
+    }
+    for (let i = 0; i < text.length; i += 1) {
+      el.textContent = text.slice(0, i + 1);
+      await sleep(42 + (text[i] === " " ? 28 : 0));
+    }
+    el.classList.remove("is-typing");
+    if (caret) caret.hidden = true;
+  };
+
+  const rewriteHeadline = async (nextText) => {
+    if (status) status.textContent = "Editing";
+    headline.classList.add("is-selected");
+    root.classList.add("is-editing");
+    await sleep(900);
+
+    headline.classList.remove("is-selected");
+    headline.classList.add("is-clearing");
+    await sleep(280);
+    headline.classList.remove("is-clearing");
+    await typeText(headline, nextText);
+    if (status) status.textContent = "Saved";
+    root.classList.remove("is-editing");
+    await sleep(2600);
+    if (status) status.textContent = "Click to edit";
+  };
+
+  const loop = async () => {
+    let index = 0;
+    while (document.body.contains(root)) {
+      if (
+        document.body.classList.contains("is-site-editing")
+        || document.body.classList.contains("site-edit-active")
+        || root.hasAttribute("data-hero-edit-paused")
+      ) {
+        await sleep(800);
+        continue;
+      }
+      await sleep(3200);
+      index = (index + 1) % lines.length;
+      await rewriteHeadline(lines[index]);
+    }
+  };
+
+  loop();
+})();
+
+(() => {
   const form = document.querySelector("#uploadForm");
   if (!form) return;
 
@@ -414,22 +488,52 @@
     return relativePath.split("/").some((part) => SKIP_DIR_NAMES.has(part.toLowerCase()) || part === ".DS_Store");
   }
 
-  async function zipFolderFiles(fileList) {
-    const files = [...fileList].filter((file) => {
-      const relative = file.webkitRelativePath || file.name;
-      return relative && !shouldSkipRelativePath(relative);
-    });
-    if (!files.length) throw new Error("That folder has no importable files.");
+  function normalizeFolderEntries(fileList) {
+    // Accept FileList from <input webkitdirectory> or [{ relativePath, file }] from showDirectoryPicker.
+    if (Array.isArray(fileList) && fileList[0] && fileList[0].relativePath) {
+      return fileList.filter((item) => item.relativePath && !shouldSkipRelativePath(item.relativePath));
+    }
+    return [...fileList]
+      .map((file) => ({
+        relativePath: file.webkitRelativePath || file.name,
+        file,
+      }))
+      .filter((item) => item.relativePath && !shouldSkipRelativePath(item.relativePath));
+  }
+
+  async function walkDirectoryHandle(dirHandle, prefix = "") {
+    const collected = [];
+    for await (const [name, handle] of dirHandle.entries()) {
+      if (SKIP_DIR_NAMES.has(name.toLowerCase()) || name === ".DS_Store") continue;
+      const relativePath = prefix ? `${prefix}/${name}` : name;
+      if (handle.kind === "directory") {
+        collected.push(...await walkDirectoryHandle(handle, relativePath));
+        continue;
+      }
+      if (handle.kind === "file") {
+        collected.push({ relativePath, file: await handle.getFile() });
+      }
+    }
+    return collected;
+  }
+
+  async function zipFolderFiles(fileList, folderNameHint = "") {
+    const items = normalizeFolderEntries(fileList);
+    if (!items.length) throw new Error("That folder has no importable files.");
 
     // Strip the shared top-level folder name so archives match ZIP uploads.
-    const first = files[0].webkitRelativePath || files[0].name;
-    const rootPrefix = first.includes("/") ? `${first.split("/")[0]}/` : "";
+    // showDirectoryPicker paths are already relative to the chosen folder (no prefix).
+    const first = items[0].relativePath;
+    const hasSharedRoot = items.every((item) => item.relativePath.includes("/"))
+      && items.every((item) => item.relativePath.split("/")[0] === first.split("/")[0])
+      && Boolean(items[0].file?.webkitRelativePath);
+    const rootPrefix = hasSharedRoot ? `${first.split("/")[0]}/` : "";
     const entries = [];
-    for (const file of files) {
-      const relative = file.webkitRelativePath || file.name;
+    for (const item of items) {
+      const relative = item.relativePath;
       const name = rootPrefix && relative.startsWith(rootPrefix) ? relative.slice(rootPrefix.length) : relative;
       if (!name) continue;
-      entries.push({ name, data: new Uint8Array(await file.arrayBuffer()) });
+      entries.push({ name, data: new Uint8Array(await item.file.arrayBuffer()) });
     }
     if (!entries.length) throw new Error("That folder has no importable files.");
 
@@ -437,11 +541,25 @@
     if (zipBytes.length > 25 * 1024 * 1024) {
       throw new Error("Packed folder is larger than 25 MB. Remove node_modules/build output or zip a smaller subset.");
     }
-    const folderName = rootPrefix.replace(/\/$/, "") || "project";
+    const folderName = folderNameHint || rootPrefix.replace(/\/$/, "") || "project";
     return {
       file: new File([zipBytes], `${folderName}.zip`, { type: "application/zip" }),
       paths: entries.map((entry) => entry.name),
     };
+  }
+
+  async function packSelectedFolder(fileList, folderNameHint = "") {
+    showPreviewShell("Packing folder…", 0, "Skipping node_modules and other tooling folders…");
+    const packed = await zipFolderFiles(fileList, folderNameHint);
+    assignFileToInput(packed.file);
+    await previewSelectedFile(packed.file, packed.paths);
+    if (sideImport) {
+      sideReady?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      sideName?.focus();
+    } else {
+      form.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      nameInput?.focus();
+    }
   }
 
   function assignFileToInput(file) {
@@ -588,9 +706,29 @@
     await previewSelectedFile(file);
   }
 
-  folderButton?.addEventListener("click", () => {
-    ingestSource = "left";
+  async function requestFolderPick(source = "left") {
+    ingestSource = source;
+
+    // Prefer File System Access API: avoids Chrome's "Upload N files to this site?" dialog.
+    // That prompt only appears for <input webkitdirectory>, which we keep as a fallback.
+    if (typeof window.showDirectoryPicker === "function") {
+      try {
+        const dirHandle = await window.showDirectoryPicker({ mode: "read" });
+        showPreviewShell("Reading folder…", 0, "Skipping node_modules and other tooling folders…");
+        const entries = await walkDirectoryHandle(dirHandle);
+        await packSelectedFolder(entries, dirHandle.name || "project");
+      } catch (error) {
+        if (error && (error.name === "AbortError" || error.name === "SecurityError")) return;
+        showPreviewError(error instanceof Error ? error.message : "Could not open that folder.");
+      }
+      return;
+    }
+
     folderInput?.click();
+  }
+
+  folderButton?.addEventListener("click", () => {
+    void requestFolderPick("left");
   });
   dropLabel?.addEventListener("click", () => {
     ingestSource = "left";
@@ -600,14 +738,7 @@
     const list = folderInput.files;
     if (!list || !list.length) return;
     try {
-      showPreviewShell("Packing folder…", 0, "Skipping node_modules and other tooling folders…");
-      const packed = await zipFolderFiles(list);
-      assignFileToInput(packed.file);
-      await previewSelectedFile(packed.file, packed.paths);
-      if (sideImport) {
-        sideReady?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        sideName?.focus();
-      }
+      await packSelectedFolder(list);
     } catch (error) {
       showPreviewError(error instanceof Error ? error.message : "Could not pack that folder.");
     } finally {
@@ -638,20 +769,17 @@
       || files.some((file) => Boolean(file.webkitRelativePath && file.webkitRelativePath.includes("/")));
     try {
       if (looksLikeFolder) {
-        showPreviewShell("Packing folder…", 0, "Skipping node_modules and other tooling folders…");
-        const packed = await zipFolderFiles(files);
-        assignFileToInput(packed.file);
-        await previewSelectedFile(packed.file, packed.paths);
+        await packSelectedFolder(files);
       } else {
         assignFileToInput(files[0]);
         await previewSelectedFile(files[0]);
-      }
-      if (sideImport && (source === "right" || sideReady)) {
-        sideReady?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        sideName?.focus();
-      } else {
-        form.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        nameInput?.focus();
+        if (sideImport && (source === "right" || sideReady)) {
+          sideReady?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          sideName?.focus();
+        } else {
+          form.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          nameInput?.focus();
+        }
       }
     } catch (error) {
       showPreviewError(error instanceof Error ? error.message : "Could not import that drop.");
@@ -717,8 +845,7 @@
   });
   emptyPickFolder?.addEventListener("click", (event) => {
     event.stopPropagation();
-    ingestSource = "right";
-    folderInput?.click();
+    void requestFolderPick("right");
   });
 
   sideName?.addEventListener("input", syncFormNameFromSide);
@@ -738,10 +865,13 @@
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const name = form.getAttribute("data-project-name") || "this project";
-      const confirmed = await siawConfirm(`Delete "${name}"? This cannot be undone.`, {
+      const confirmed = await siawConfirm("", {
         danger: true,
         confirmLabel: "Delete",
-        title: "Delete project",
+        cancelLabel: "Cancel",
+        title: `Delete “${name}”?`,
+        message: "This removes the project from your account. It cannot be undone.",
+        eyebrow: "Delete project",
       });
       if (confirmed) form.submit();
     });

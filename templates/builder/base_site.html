@@ -5,15 +5,24 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Siaw Visual Editor{% endblock %}</title>
-  <meta name="description" content="{% block meta_description %}Prompt a website, edit it visually, and export clean HTML.{% endblock %}">
+  <meta name="description" content="{% block meta_description %}Siaw Visual Editor: prompt a full website, edit it visually with drag and drop, import existing HTML, and export a clean ZIP.{% endblock %}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Syne:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'builder/ui-dialog.css' %}">
   <link rel="stylesheet" href="{% static 'builder/dashboard.css' %}">
+  {% if site_edit_enabled %}
+  <link rel="stylesheet" href="{% static 'builder/site-edit.css' %}">
+  {% endif %}
   {% block extra_head %}{% endblock %}
 </head>
-<body class="{% block body_class %}{% endblock %}">
+<body
+  class="{% block body_class %}{% endblock %}"
+  {% if site_edit_enabled %}
+  data-site-edit="1"
+  data-site-edit-save-url="{% url 'builder:save_site_edit' %}"
+  {% endif %}
+>
   <header class="topbar">
     <a href="{% url 'builder:dashboard' %}" class="brand">
       <span class="brand-mark" aria-hidden="true">S</span>
@@ -23,8 +32,11 @@
       </span>
     </a>
     <nav class="top-nav" aria-label="Primary">
-      <a class="nav-link-secondary" href="{% url 'builder:dashboard' %}#workspace">Build</a>
+      {% block top_nav %}
+      <a class="nav-link-secondary" href="{% url 'builder:dashboard' %}#services">Services</a>
+      <a class="nav-link-secondary" href="{% url 'builder:dashboard' %}#features">Features</a>
       <a href="{% url 'builder:dashboard' %}#pricing">Pricing</a>
+      <a class="nav-link-secondary" href="{% url 'builder:dashboard' %}#workspace">Build</a>
       {% if user.is_authenticated %}
         <a class="nav-link-secondary" href="{% url 'builder:dashboard' %}#projects">Projects</a>
         <span class="nav-user">{{ user.get_username }}</span>
@@ -33,6 +45,7 @@
         <a class="btn-nav btn-nav-ghost" href="{% url 'builder:login' %}">Log in</a>
         <a class="btn-nav btn-nav-primary" href="{% url 'builder:signup' %}">Sign up</a>
       {% endif %}
+      {% endblock %}
     </nav>
   </header>
 
@@ -44,6 +57,7 @@
 
   {% block content %}{% endblock %}
 
+  {% block site_footer %}
   <footer class="site-footer">
     <div class="wrap footer-row">
       <span>Siaw Visual Editor</span>
@@ -58,8 +72,13 @@
       </nav>
     </div>
   </footer>
+  {% endblock %}
+  {% csrf_token %}
   {% block scripts %}
   <script src="{% static 'builder/ui-dialog.js' %}" defer></script>
+  {% if site_edit_enabled %}
+  <script src="{% static 'builder/site-edit.js' %}" defer></script>
+  {% endif %}
   {% endblock %}
 </body>
 </html>

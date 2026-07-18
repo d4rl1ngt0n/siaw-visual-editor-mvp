@@ -1,10 +1,15 @@
 import os
+import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-local-siaw-visual-editor-mvp")
 DEBUG = os.environ.get("DEBUG", "true").lower() in {"1", "true", "yes"}
+_RUNNING_TESTS = len(sys.argv) > 1 and sys.argv[1] == "test"
 
 _default_hosts = ["127.0.0.1", "localhost", ".localhost"]
 _extra_hosts = [host.strip() for host in os.environ.get("ALLOWED_HOSTS", "").split(",") if host.strip()]
@@ -56,6 +61,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "builder.context_processors.site_edit",
             ],
         },
     },
@@ -67,14 +73,32 @@ ASGI_APPLICATION = "siaw_editor.asgi.application"
 # Render free disks are ephemeral. Set DATA_DIR to a persistent disk mount when available.
 DATA_DIR = Path(os.environ.get("DATA_DIR", BASE_DIR))
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": DATA_DIR / "db.sqlite3",
-    }
-}
+_database_url = (os.environ.get("DATABASE_URL") or "").strip()
+if _database_url and not _RUNNING_TESTS:
+    import dj_database_url
 
-AUTH_PASSWORD_VALIDATORS = []
+    DATABASES = {
+        "default": dj_database_url.parse(
+            _database_url,
+            conn_max_age=600,
+            conn_health_checks=True,
+            ssl_require=True,
+        )
+    }
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": DATA_DIR / "db.sqlite3",
+        }
+    }
+
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "Europe/Berlin"
@@ -129,3 +153,6 @@ SIAW_AI_MODEL = os.environ.get("SIAW_AI_MODEL", "")
 SIAW_OLLAMA_HOST = os.environ.get("SIAW_OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
 SIAW_AI_TIMEOUT_SECONDS = int(os.environ.get("SIAW_AI_TIMEOUT_SECONDS", "0") or "0")
 SIAW_AI_FORCE_OFFLINE = os.environ.get("SIAW_AI_FORCE_OFFLINE", "false").lower() in {"1", "true", "yes"}
+
+# Localhost marketing-page edits that write back into templates/. Never enable on live.
+SIAW_SITE_EDIT = os.environ.get("SIAW_SITE_EDIT", "true").lower() in {"1", "true", "yes"}

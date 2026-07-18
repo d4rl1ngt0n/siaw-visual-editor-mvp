@@ -4,11 +4,20 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .models import WebsiteProject
+
+
+def _make_user(username="siaw-tester"):
+    return User.objects.create_user(
+        username=username,
+        email=f"{username}@example.com",
+        password="siaw-test-pass-99",
+    )
 from .services.html_tools import (
     extract_hero_photos,
     extract_reviews,
@@ -115,11 +124,14 @@ class EditorWorkflowTests(TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.override.enable()
+        self.user = _make_user("editor-user")
+        self.client.force_login(self.user)
 
         self.project = WebsiteProject.objects.create(
             name="Test Website",
             entry_file="index.html",
             stylesheet_files=["style.css"],
+            owner=self.user,
         )
         self.project.source_dir.mkdir(parents=True)
         self.project.entry_path.write_text(
@@ -213,6 +225,8 @@ class UploadSecurityTests(TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.override.enable()
+        self.user = _make_user("upload-user")
+        self.client.force_login(self.user)
 
     def tearDown(self):
         self.override.disable()
@@ -244,12 +258,17 @@ class UploadSecurityTests(TestCase):
         )
         self.assertEqual(response.status_code, 302)
         project = WebsiteProject.objects.get(name="HTML Only")
+        self.assertEqual(project.owner_id, self.user.id)
         self.assertEqual(project.entry_file, "landing.html")
         self.assertTrue(project.entry_path.is_file())
         self.assertIn("Hello", project.entry_path.read_text(encoding="utf-8"))
 
     def test_delete_project_removes_files_and_record(self):
-        project = WebsiteProject.objects.create(name="Disposable", entry_file="index.html")
+        project = WebsiteProject.objects.create(
+            name="Disposable",
+            entry_file="index.html",
+            owner=self.user,
+        )
         project.source_dir.mkdir(parents=True)
         project.entry_path.write_text("<html><body>Bye</body></html>", encoding="utf-8")
         project_dir = project.project_dir
@@ -328,7 +347,13 @@ class CompatibilityAndSmartManagerTests(TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.override.enable()
-        self.project = WebsiteProject.objects.create(name="Inline Website", entry_file="index.html")
+        self.user = _make_user("compat-user")
+        self.client.force_login(self.user)
+        self.project = WebsiteProject.objects.create(
+            name="Inline Website",
+            entry_file="index.html",
+            owner=self.user,
+        )
         self.project.source_dir.mkdir(parents=True)
         self.project.entry_path.write_text(
             '<!doctype html><html lang="de" class="no-js"><head><style>.mark{width:44px}</style></head>'
@@ -409,10 +434,13 @@ class UniversalCompatibilityEngineTests(TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.override.enable()
+        self.user = _make_user("universal-user")
+        self.client.force_login(self.user)
         self.project = WebsiteProject.objects.create(
             name="Dynamic App",
             entry_file="index.html",
             stylesheet_files=["styles.css"],
+            owner=self.user,
         )
         self.project.source_dir.mkdir(parents=True)
         self.project.entry_path.write_text(
@@ -445,7 +473,8 @@ class UniversalCompatibilityEngineTests(TestCase):
         response = self.client.get(reverse("builder:editor_data", args=[self.project.id]))
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertIn('src="images/photo.webp"', payload["html"])
+        self.assertIn("images/photo.webp", payload["html"])
+        self.assertIn('alt="Lazy"', payload["html"])
         report = payload["compatibility"]
         self.assertEqual(report["websiteType"], "Interactive web application")
         self.assertEqual(report["hydratedLazyMediaCount"], 1)
@@ -477,13 +506,23 @@ class NavigationAndCaptureTests(TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.override.enable()
+        self.user = _make_user("nav-user")
+        self.client.force_login(self.user)
 
     def tearDown(self):
         self.override.disable()
         self.temp_dir.cleanup()
 
+    def _project(self, name, entry_file="index.html", **kwargs):
+        return WebsiteProject.objects.create(
+            name=name,
+            entry_file=entry_file,
+            owner=self.user,
+            **kwargs,
+        )
+
     def test_static_navigation_manager_is_detected(self):
-        project = WebsiteProject.objects.create(name="Static Nav", entry_file="index.html")
+        project = self._project("Static Nav")
         project.source_dir.mkdir(parents=True)
         project.entry_path.write_text(
             '<html><body><header><nav class="navbar"><div id="navLinks">'
@@ -500,7 +539,7 @@ class NavigationAndCaptureTests(TestCase):
         self.assertEqual([item["label"] for item in navigation["items"]], ["Home", "Projects"])
 
     def test_javascript_navigation_manager_updates_inline_array(self):
-        project = WebsiteProject.objects.create(name="Generated Nav", entry_file="index.html")
+        project = self._project("Generated Nav")
         project.source_dir.mkdir(parents=True)
         project.entry_path.write_text(
             '''<html><body><nav><ul id="desktop-nav-list"></ul></nav><main>App</main>
@@ -534,7 +573,7 @@ class NavigationAndCaptureTests(TestCase):
         self.assertIn('label:"Start"', saved.replace(" ", ""))
 
     def test_runtime_entry_injects_capture_bridge(self):
-        project = WebsiteProject.objects.create(name="Runtime", entry_file="index.html")
+        project = self._project("Runtime")
         project.source_dir.mkdir(parents=True)
         project.entry_path.write_text('<html><body><main>Hello</main></body></html>', encoding="utf-8")
         host = f"{project.id}.runtime.localhost:8000"
@@ -546,7 +585,7 @@ class NavigationAndCaptureTests(TestCase):
     def test_vite_shell_prefers_live_preview(self):
         from builder.services.compatibility import analyze_website
 
-        project = WebsiteProject.objects.create(name="Vite Shell", entry_file="dist/index.html")
+        project = self._project("Vite Shell", entry_file="dist/index.html")
         dist = project.source_dir / "dist"
         dist.mkdir(parents=True)
         (dist / "index.html").write_text(
@@ -566,7 +605,7 @@ class NavigationAndCaptureTests(TestCase):
     def test_nitro_ssr_output_is_detected(self):
         from builder.services.preview_server import detect_ssr_preview
 
-        project = WebsiteProject.objects.create(name="Nitro App", entry_file="package.json")
+        project = self._project("Nitro App", entry_file="package.json")
         server = project.source_dir / "dist" / "server"
         server.mkdir(parents=True)
         (project.source_dir / "dist" / "nitro.json").write_text(
@@ -581,7 +620,7 @@ class NavigationAndCaptureTests(TestCase):
         self.assertTrue(str(info.server_script).endswith("dist/server/index.mjs"))
 
     def test_path_based_site_root_rewrites_vite_assets(self):
-        project = WebsiteProject.objects.create(name="Site Root", entry_file="dist/index.html")
+        project = self._project("Site Root", entry_file="dist/index.html")
         dist = project.source_dir / "dist" / "assets"
         dist.mkdir(parents=True)
         (project.source_dir / "dist" / "index.html").write_text(
@@ -600,7 +639,7 @@ class NavigationAndCaptureTests(TestCase):
         self.assertEqual(asset_response.status_code, 200)
 
     def test_editor_template_includes_capture_panel(self):
-        project = WebsiteProject.objects.create(name="Capture UI", entry_file="index.html")
+        project = self._project("Capture UI")
         project.source_dir.mkdir(parents=True)
         project.entry_path.write_text('<html><body><main>Hello</main></body></html>', encoding="utf-8")
         response = self.client.get(reverse("builder:editor", args=[project.id]))
@@ -613,7 +652,13 @@ class Phase1TrustTests(TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.override.enable()
-        self.project = WebsiteProject.objects.create(name="Phase1 Site", entry_file="index.html")
+        self.user = _make_user("phase1-user")
+        self.client.force_login(self.user)
+        self.project = WebsiteProject.objects.create(
+            name="Phase1 Site",
+            entry_file="index.html",
+            owner=self.user,
+        )
         self.project.source_dir.mkdir(parents=True)
         self.project.entry_path.write_text(
             "<!doctype html><html><body>"
@@ -716,7 +761,13 @@ class CaptureFidelityTests(TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.override.enable()
-        self.project = WebsiteProject.objects.create(name="Capture Site", entry_file="index.html")
+        self.user = _make_user("capture-user")
+        self.client.force_login(self.user)
+        self.project = WebsiteProject.objects.create(
+            name="Capture Site",
+            entry_file="index.html",
+            owner=self.user,
+        )
         self.project.source_dir.mkdir(parents=True)
         assets = self.project.source_dir / "assets"
         assets.mkdir()
@@ -842,6 +893,7 @@ class AIWebsiteBuilderTests(TestCase):
             OPENAI_API_KEY="",
         )
         self.override.enable()
+        self.user = _make_user("ai-user")
 
     def tearDown(self):
         self.override.disable()
@@ -852,11 +904,18 @@ class AIWebsiteBuilderTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Create with AI")
         self.assertContains(response, "generateForm")
+        self.assertContains(response, "Log in to generate")
         self.assertContains(response, "Sign up")
         self.assertContains(response, "Pricing")
         self.assertContains(response, 'id="pricing"')
+        self.assertContains(response, 'id="services"')
+        self.assertContains(response, 'id="features"')
         self.assertContains(response, "hero-demo")
+        self.assertContains(response, "hero-guide-mouse")
         self.assertContains(response, "Drop to replace")
+        self.assertContains(response, "Start building now")
+        self.assertContains(response, "data-hero-edit")
+        self.assertContains(response, "Prompt a site. Edit by hand.")
 
     def test_project_thumbnail_uses_hero_image(self):
         from builder.services.thumbnails import project_thumbnail
@@ -873,8 +932,6 @@ class AIWebsiteBuilderTests(TestCase):
         self.assertIn("unsplash.com", thumb["src"])
 
     def test_signup_login_logout_and_pricing(self):
-        from django.contrib.auth.models import User
-
         pricing = self.client.get(reverse("builder:pricing"))
         self.assertEqual(pricing.status_code, 200)
         self.assertContains(pricing, "Pro")
@@ -901,7 +958,23 @@ class AIWebsiteBuilderTests(TestCase):
         self.assertContains(dash, "Log out")
         self.assertContains(dash, "harborhost")
 
+    def test_login_next_upload_redirects_to_dashboard(self):
+        User.objects.create_user(username="uploadnext", password="siaw-test-pass-99")
+        response = self.client.post(
+            f"{reverse('builder:login')}?next=/projects/upload/",
+            data={"username": "uploadnext", "password": "siaw-test-pass-99"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/#workspace", response["Location"])
+
+    def test_upload_get_redirects_to_dashboard(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("builder:upload_project"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/#workspace", response["Location"])
+
     def test_generate_project_offline_opens_safe_edit(self):
+        self.client.force_login(self.user)
         response = self.client.post(
             reverse("builder:generate_project"),
             data={
@@ -912,6 +985,7 @@ class AIWebsiteBuilderTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn("mode=safe", response["Location"])
         project = WebsiteProject.objects.get(name="Alvora Demo")
+        self.assertEqual(project.owner_id, self.user.id)
         self.assertEqual(project.entry_file, "index.html")
         html = project.entry_path.read_text(encoding="utf-8")
         self.assertIn("<!DOCTYPE html>", html)

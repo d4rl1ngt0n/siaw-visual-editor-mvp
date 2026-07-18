@@ -1,0 +1,105 @@
+.site-edit-bar {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 12000;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  background: rgba(20, 18, 14, .92);
+  color: #f5f2ec;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+}
+.site-edit-bar-copy {
+  display: grid;
+  gap: 2px;
+  min-width: min(100%, 280px);
+}
+.site-edit-bar-copy strong {
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: .02em;
+}
+.site-edit-bar-copy span {
+  font-size: 12px;
+  color: #b8b2a8;
+  line-height: 1.4;
+}
+.site-edit-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.site-edit-btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: #2c2a26;
+  color: #f5f2ec;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.site-edit-btn:hover { background: #3a3732; }
+.site-edit-btn-primary {
+  background: #f0e8dc;
+  color: #171717;
+}
+.site-edit-btn-primary:hover { background: #fff; }
+.site-edit-btn-ghost {
+  background: transparent;
+  border: 1px solid #4a463f;
+}
+.site-edit-btn:disabled { opacity: .6; cursor: wait; }
+
+body.is-site-editing [data-site-edit].is-site-editable {
+  outline: 2px solid rgba(226, 61, 61, .55);
+  outline-offset: 3px;
+  border-radius: 4px;
+  cursor: text;
+  min-width: 1ch;
+}
+body.is-site-editing [data-site-edit].is-site-editable-media {
+  outline: 2px dashed rgba(226, 61, 61, .7);
+  outline-offset: 4px;
+  cursor: pointer;
+}
+body.is-site-editing a {
+  cursor: text;
+}
+body.site-edit-active .hero-guide-mouse,
+body.site-edit-active .hero-demo-mouse,
+body.is-site-editing .hero-guide-mouse,
+body.is-site-editing .hero-demo-mouse,
+body.is-site-editing .hero-action-btn {
+  animation: none !important;
+}
+body.is-site-editing .hero-action-btn {
+  opacity: 1 !important;
+  transform: none !important;
+  max-width: none !important;
+  padding-left: 20px !important;
+  padding-right: 20px !important;
+  border-width: 1px !important;
+  margin: 0 !important;
+  overflow: visible !important;
+}
+
+@media (max-width: 720px) {
+  .site-edit-bar {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    padding: 12px;
+  }
+}

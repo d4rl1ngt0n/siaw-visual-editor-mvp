@@ -5,38 +5,47 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(23, 23, 23, .48);
-  backdrop-filter: blur(3px);
+  background: rgba(20, 18, 14, .52);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: siaw-dialog-backdrop-in 160ms ease-out;
 }
 .siaw-dialog-root[hidden] { display: none !important; }
 .siaw-dialog-card {
-  width: min(440px, 100%);
+  width: min(420px, 100%);
   max-height: min(80vh, 640px);
   overflow: auto;
-  padding: 24px;
-  border-radius: 16px;
-  border: 1px solid #dde2e7;
-  background: #fff;
-  color: #171717;
-  box-shadow: 0 22px 60px rgba(20, 25, 30, .28);
+  padding: 28px 28px 24px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  background: #171717;
+  color: #f5f2ec;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .06) inset,
+    0 28px 80px rgba(0, 0, 0, .45);
+  font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  animation: siaw-dialog-card-in 220ms ease-out;
 }
 .siaw-dialog-eyebrow {
-  margin: 0 0 8px;
-  color: #d83232;
+  margin: 0 0 10px;
+  color: #ff6b6b;
   font-size: 11px;
-  font-weight: 800;
-  letter-spacing: .12em;
+  font-weight: 700;
+  letter-spacing: .14em;
   text-transform: uppercase;
 }
 .siaw-dialog-title {
   margin: 0 0 10px;
+  font-family: "Syne", ui-sans-serif, system-ui, sans-serif;
   font-size: 22px;
+  font-weight: 700;
   letter-spacing: -.03em;
-  line-height: 1.2;
+  line-height: 1.25;
+  color: #fff;
 }
 .siaw-dialog-message {
   margin: 0;
-  color: #5f6771;
+  color: #b8b2a8;
   font-size: 14px;
   line-height: 1.55;
   white-space: pre-wrap;
@@ -44,55 +53,77 @@
 }
 .siaw-dialog-input {
   width: 100%;
-  margin-top: 16px;
+  margin-top: 18px;
   padding: 12px 14px;
-  border: 1px solid #ccd2d8;
-  border-radius: 10px;
+  border: 1px solid #3a3834;
+  border-radius: 12px;
   font: inherit;
   font-size: 14px;
   outline: none;
-  background: #fff;
-  color: #171717;
+  background: #22201c;
+  color: #f5f2ec;
 }
+.siaw-dialog-input::placeholder { color: #7a746c; }
 .siaw-dialog-input:focus {
-  border-color: #ff4545;
-  box-shadow: 0 0 0 3px rgba(255, 69, 69, .12);
+  border-color: #ff6b6b;
+  box-shadow: 0 0 0 3px rgba(255, 107, 107, .18);
 }
 .siaw-dialog-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 20px;
+  gap: 10px;
+  margin-top: 24px;
 }
 .siaw-dialog-btn {
-  border: 1px solid #d5dbe1;
-  border-radius: 10px;
-  padding: 10px 14px;
-  background: #fff;
-  color: #171717;
+  border: 0;
+  border-radius: 999px;
+  padding: 11px 18px;
+  background: #2c2a26;
+  color: #f5f2ec;
   font: inherit;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
+  transition: background 150ms ease-out, color 150ms ease-out, transform 150ms ease-out;
 }
-.siaw-dialog-btn:hover { border-color: #b8c0c8; }
+.siaw-dialog-btn:hover { background: #3a3732; }
+.siaw-dialog-btn:active { transform: translateY(1px); }
 .siaw-dialog-btn:focus-visible {
-  outline: 2px solid #ff4545;
+  outline: 2px solid #ff6b6b;
   outline-offset: 2px;
 }
 .siaw-dialog-btn-primary {
-  border-color: #ff4545;
-  background: #ff4545;
-  color: #fff;
+  background: #f0e8dc;
+  color: #171717;
 }
-.siaw-dialog-btn-primary:hover { background: #d83232; border-color: #d83232; }
+.siaw-dialog-btn-primary:hover { background: #fff; }
 .siaw-dialog-btn-danger {
-  border-color: #c52b2b;
-  background: #c52b2b;
+  background: #e23d3d;
   color: #fff;
 }
-.siaw-dialog-btn-danger:hover { background: #a82323; border-color: #a82323; }
+.siaw-dialog-btn-danger:hover { background: #c42f2f; }
+
+@keyframes siaw-dialog-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes siaw-dialog-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .siaw-dialog-root { backdrop-filter: none; }
+  .siaw-dialog-root,
+  .siaw-dialog-card {
+    animation: none;
+  }
+  .siaw-dialog-root { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .siaw-dialog-btn { transition: none; }
 }

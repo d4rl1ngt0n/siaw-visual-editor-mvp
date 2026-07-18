@@ -1,7 +1,7 @@
 {% extends "builder/base_site.html" %}
 {% load static %}
 
-{% block title %}Siaw Visual Editor{% endblock %}
+{% block title %}Siaw Visual Editor | Prompt, edit, and export websites{% endblock %}
 
 {% block scripts %}
   {{ block.super }}
@@ -15,17 +15,35 @@
       <div class="hero-grid" aria-hidden="true"></div>
       <div class="hero-stage wrap">
         <div class="hero-inner">
-          <p class="brand-hero">Siaw</p>
-          <h1>Websites you can prompt, then edit by hand.</h1>
-          <p class="lead">Describe a business, get a full static site, then drag images, rewrite copy, and reshape layout in Safe Edit.</p>
-          <div class="hero-actions">
-            <a class="btn btn-primary" href="#workspace">Start building</a>
-            {% if user.is_authenticated %}
-              <a class="btn btn-ghost" href="#projects">Open a project</a>
-            {% else %}
-              <a class="btn btn-ghost" href="{% url 'builder:signup' %}">Create a free account</a>
-            {% endif %}
+          <p class="brand-hero" data-site-edit="hero.brand">Siaw</p>
+          <div class="hero-edit-stage" data-hero-edit>
+            <div class="hero-edit-chrome">
+              <span class="hero-edit-pill" data-site-edit="hero.pill">Safe Edit</span>
+              <span class="hero-edit-status" data-hero-edit-status>Click to edit</span>
+            </div>
+            <h1 class="hero-headline">
+              <span class="hero-edit-line" data-hero-headline data-site-edit="hero.headline">Prompt a site. Edit by hand.</span><span class="hero-caret" data-hero-caret hidden aria-hidden="true"></span>
+            </h1>
+            <p class="lead" data-site-edit="hero.lead">AI drafts the page. You drag, rewrite, and ship.</p>
           </div>
+          <div class="hero-actions">
+            {% if user.is_authenticated %}
+              <a class="btn btn-ghost hero-action-btn is-secondary" href="#services" data-site-edit="hero.cta.secondary.auth">See what you get</a>
+              <a class="btn btn-primary hero-action-btn is-primary" href="#workspace" data-site-edit="hero.cta.primary.auth">Open workspace</a>
+            {% else %}
+              <a class="btn btn-ghost hero-action-btn is-secondary" href="#services" data-site-edit="hero.cta.secondary">Explore services</a>
+              <a class="btn btn-primary hero-action-btn is-primary" href="{% url 'builder:signup' %}" data-site-edit="hero.cta.primary">Start free</a>
+            {% endif %}
+            <div class="hero-guide-mouse" aria-hidden="true">
+              <svg class="hero-cursor-arrow" viewBox="0 0 32 32" width="32" height="32" fill="none">
+                <path d="M6 3.5v22.2l6.1-5.4 3.5 8.4 3.7-1.5-3.5-8.3L24.2 17 6 3.5z" fill="#fff" stroke="#141414" stroke-width="1.6" stroke-linejoin="round"/>
+              </svg>
+              <svg class="hero-cursor-grab" viewBox="0 0 32 32" width="32" height="32" fill="none">
+                <path d="M11.2 14.2V8.4a1.8 1.8 0 0 1 3.6 0v5.2M14.8 13.2V7.2a1.8 1.8 0 0 1 3.6 0v6.4M18.4 13.5V8.8a1.8 1.8 0 1 1 3.6 0v7.2M22 16.2v-2.4a1.8 1.8 0 0 1 3.6 0v5.2c0 4.2-2.8 7.4-7.2 7.4h-1.4c-3.4 0-5.6-1.4-7.2-3.8L8.2 19a2.2 2.2 0 0 1 3.2-3l2.2 2.1V14.2a1.8 1.8 0 0 1 3.6 0" fill="#fff" stroke="#141414" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+          </div>
+          <p class="hero-trust" data-site-edit="hero.trust">AI draft · Visual editing · Import HTML · Export ZIP</p>
         </div>
 
         <div class="hero-demo" aria-hidden="true">
@@ -55,15 +73,28 @@
                 <figcaption>Swap</figcaption>
               </figure>
             </div>
+            <div class="hero-demo-mouse" aria-hidden="true">
+              <svg class="hero-cursor-arrow" viewBox="0 0 32 32" width="28" height="28" fill="none">
+                <path d="M6 3.5v22.2l6.1-5.4 3.5 8.4 3.7-1.5-3.5-8.3L24.2 17 6 3.5z" fill="#fff" stroke="#141414" stroke-width="1.6" stroke-linejoin="round"/>
+              </svg>
+              <svg class="hero-cursor-grab" viewBox="0 0 32 32" width="28" height="28" fill="none">
+                <path d="M11.2 14.2V8.4a1.8 1.8 0 0 1 3.6 0v5.2M14.8 13.2V7.2a1.8 1.8 0 0 1 3.6 0v6.4M18.4 13.5V8.8a1.8 1.8 0 1 1 3.6 0v7.2M22 16.2v-2.4a1.8 1.8 0 0 1 3.6 0v5.2c0 4.2-2.8 7.4-7.2 7.4h-1.4c-3.4 0-5.6-1.4-7.2-3.8L8.2 19a2.2 2.2 0 0 1 3.2-3l2.2 2.1V14.2a1.8 1.8 0 0 1 3.6 0" fill="#fff" stroke="#141414" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
           </div>
         </div>
       </div>
     </section>
 
+    {% include "builder/partials/marketing_sections.html" %}
+    {% include "builder/partials/pricing_section.html" %}
+    {% include "builder/partials/final_cta.html" %}
+
     <section class="workspace wrap" id="workspace">
       <div class="workspace-intro">
-        <p class="eyebrow">Workspace</p>
-        <h2>Create or continue</h2>
+        <p class="eyebrow" data-site-edit="workspace.eyebrow">Workspace</p>
+        <h2 data-site-edit="workspace.title">Start building now</h2>
+        <p class="workspace-lead" data-site-edit="workspace.lead">Generate with AI, import a site, or continue a project you already started.</p>
       </div>
 
       <div class="workspace-grid">
@@ -106,7 +137,12 @@
                   {% endif %}
                 </p>
                 {% endif %}
-                <button type="submit" class="primary-btn" data-generate-submit>Generate and open editor</button>
+                {% if user.is_authenticated %}
+                  <button type="submit" class="primary-btn" data-generate-submit>Generate and open editor</button>
+                {% else %}
+                  <p class="ai-hint">Log in to save projects to your account.</p>
+                  <a class="primary-btn" href="{% url 'builder:login' %}?next={% url 'builder:dashboard' %}#workspace">Log in to generate</a>
+                {% endif %}
               </form>
             </div>
 
@@ -157,7 +193,12 @@
                   <ul class="upload-preview-files" data-preview-files></ul>
                 </div>
 
-                <button type="submit" class="primary-btn">Import and open editor</button>
+                {% if user.is_authenticated %}
+                  <button type="submit" class="primary-btn">Import and open editor</button>
+                {% else %}
+                  <p class="ai-hint">Log in to import into your account.</p>
+                  <a class="primary-btn" href="{% url 'builder:login' %}?next={% url 'builder:dashboard' %}#workspace">Log in to import</a>
+                {% endif %}
               </form>
             </div>
           </div>
@@ -228,7 +269,12 @@
                   <pre class="upload-preview-code" data-side-preview-code hidden></pre>
                   <p class="upload-preview-status" data-side-preview-status></p>
                   <ul class="upload-preview-files" data-side-preview-files></ul>
-                  <button type="submit" form="uploadForm" class="primary-btn">Import and open editor</button>
+                  {% if user.is_authenticated %}
+                    <button type="submit" form="uploadForm" class="primary-btn">Import and open editor</button>
+                  {% else %}
+                    <p class="ai-hint">Log in to import into your account.</p>
+                    <a class="primary-btn" href="{% url 'builder:login' %}?next={% url 'builder:dashboard' %}#workspace">Log in to import</a>
+                  {% endif %}
                 </div>
               </div>
             {% endfor %}
@@ -236,7 +282,5 @@
         </section>
       </div>
     </section>
-
-    {% include "builder/partials/pricing_section.html" %}
   </main>
 {% endblock %}

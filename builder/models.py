@@ -7,6 +7,13 @@ from django.db import models
 
 class WebsiteProject(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="website_projects",
+        null=True,
+        blank=True,
+    )
     name = models.CharField(max_length=160)
     entry_file = models.CharField(max_length=500, default="index.html")
     stylesheet_files = models.JSONField(default=list, blank=True)
@@ -15,6 +22,9 @@ class WebsiteProject(models.Model):
 
     class Meta:
         ordering = ["-updated_at"]
+        indexes = [
+            models.Index(fields=["owner", "-updated_at"]),
+        ]
 
     def __str__(self) -> str:
         return self.name

@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from django.contrib import messages
 from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
 from django.core.exceptions import ValidationError
 from django.core.files import File
@@ -37,6 +38,7 @@ from .services.archive import (
     safe_project_path,
 )
 from .services.ai_builder import ai_configured, ai_status, create_website_from_prompt
+from .services.site_edit import apply_site_edits, site_edit_allowed
 from .services.editor_assets import materialize_entry_for_visual_editor
 from .services.route_capture import (
     collect_stylesheet_refs,
@@ -154,10 +156,22 @@ def _isolated_runtime_url(request, project: WebsiteProject) -> str:
     return request.build_absolute_uri(f"{site_path}?v={version}")
 
 
-def _dashboard_context(**extra):
+def _owned_projects_qs(user):
+    if not user.is_authenticated:
+        return WebsiteProject.objects.none()
+    if user.is_staff:
+        return WebsiteProject.objects.all()
+    return WebsiteProject.objects.filter(owner=user)
+
+
+def _get_owned_project(request, project_id) -> WebsiteProject:
+    return get_object_or_404(_owned_projects_qs(request.user), id=project_id)
+
+
+def _dashboard_context(request, **extra):
     from .services.thumbnails import attach_project_thumbnails
 
-    projects = list(WebsiteProject.objects.all())
+    projects = list(_owned_projects_qs(request.user))
     context = {
         "projects": projects,
         "project_rows": attach_project_thumbnails(projects),
@@ -173,7 +187,7 @@ def _dashboard_context(**extra):
 
 @require_GET
 def dashboard(request):
-    return render(request, "builder/dashboard.html", _dashboard_context())
+    return render(request, "builder/dashboard.html", _dashboard_context(request))
 
 
 @require_GET
@@ -181,10 +195,48 @@ def pricing(request):
     return render(request, "builder/pricing.html")
 
 
+@require_POST
+def save_site_edit(request):
+    """Persist localhost marketing edits into template source files."""
+    if not site_edit_allowed(request):
+        return JsonResponse({"error": "Site editing is only available on local DEBUG servers."}, status=403)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"error": "Invalid edit payload."}, status=400)
+    edits = payload.get("edits")
+    try:
+        result = apply_site_edits(edits if isinstance(edits, list) else [])
+    except ValueError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    except OSError as exc:
+        return JsonResponse({"error": f"Could not write templates: {exc}"}, status=500)
+    return JsonResponse(result)
+
+
+# POST-only endpoints that must not be used as login ?next= targets.
+_POST_ONLY_NEXT_PREFIXES = (
+    "/projects/upload/",
+    "/projects/generate/",
+)
+
+
+def _safe_post_login_url(candidate: str) -> str:
+    """Avoid 405s when login ?next= points at a POST-only create endpoint."""
+    path = (candidate or "").strip() or reverse("builder:dashboard")
+    for prefix in _POST_ONLY_NEXT_PREFIXES:
+        if path == prefix or path.startswith(prefix + "?"):
+            return f"{reverse('builder:dashboard')}#workspace"
+    return path
+
+
 class UserLoginView(LoginView):
     template_name = "builder/login.html"
     authentication_form = LoginForm
     redirect_authenticated_user = True
+
+    def get_success_url(self):
+        return _safe_post_login_url(super().get_success_url())
 
 
 @require_http_methods(["GET", "POST"])
@@ -208,18 +260,21 @@ def logout_view(request):
     return redirect("builder:dashboard")
 
 
-@require_POST
+@login_required
+@require_http_methods(["GET", "POST"])
 def generate_project(request):
+    if request.method == "GET":
+        return redirect(f"{reverse('builder:dashboard')}#workspace")
     form = WebsiteGenerateForm(request.POST)
     if not form.is_valid():
         return render(
             request,
             "builder/dashboard.html",
-            _dashboard_context(generate_form=form, active_create_tab="ai"),
+            _dashboard_context(request, generate_form=form, active_create_tab="ai"),
             status=400,
         )
 
-    project = WebsiteProject.objects.create(name=form.cleaned_data["name"])
+    project = WebsiteProject.objects.create(name=form.cleaned_data["name"], owner=request.user)
     try:
         generated = create_website_from_prompt(
             project.project_dir,
@@ -237,7 +292,7 @@ def generate_project(request):
         return render(
             request,
             "builder/dashboard.html",
-            _dashboard_context(generate_form=form, active_create_tab="ai"),
+            _dashboard_context(request, generate_form=form, active_create_tab="ai"),
             status=400,
         )
     except Exception:
@@ -258,18 +313,21 @@ def generate_project(request):
     return redirect(f"{reverse('builder:editor', args=[project.id])}?mode=safe")
 
 
-@require_POST
+@login_required
+@require_http_methods(["GET", "POST"])
 def upload_project(request):
+    if request.method == "GET":
+        return redirect(f"{reverse('builder:dashboard')}#workspace")
     form = WebsiteUploadForm(request.POST, request.FILES)
     if not form.is_valid():
         return render(
             request,
             "builder/dashboard.html",
-            _dashboard_context(form=form, active_create_tab="import"),
+            _dashboard_context(request, form=form, active_create_tab="import"),
             status=400,
         )
 
-    project = WebsiteProject.objects.create(name=form.cleaned_data["name"])
+    project = WebsiteProject.objects.create(name=form.cleaned_data["name"], owner=request.user)
     preferred_entry = form.cleaned_data.get("entry_file") or None
     try:
         imported = import_website_zip(
@@ -300,7 +358,7 @@ def upload_project(request):
         return render(
             request,
             "builder/dashboard.html",
-            _dashboard_context(form=form, active_create_tab="import"),
+            _dashboard_context(request, form=form, active_create_tab="import"),
             status=400,
         )
     except Exception:
@@ -326,9 +384,10 @@ def upload_project(request):
     return redirect("builder:editor", project_id=project.id)
 
 
+@login_required
 @require_POST
 def delete_project(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     name = project.name
     try:
         from .services.preview_server import stop_preview_server
@@ -343,8 +402,9 @@ def delete_project(request, project_id):
 
 
 @require_GET
+@login_required
 def editor(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     js_build = read_build_status(project.project_dir)
     ssr_preview = js_build.get("previewMode") == "ssr" and js_build.get("status") == "succeeded"
     visual_mode = is_html_path(project.entry_file) or ssr_preview
@@ -407,16 +467,18 @@ def _apply_build_output_entry(project: WebsiteProject, build_status: dict) -> bo
 
 
 @require_GET
+@login_required
 def build_status(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     status = read_build_status(project.project_dir)
     status["entryFile"] = project.entry_file
     return JsonResponse(status)
 
 
 @require_POST
+@login_required
 def build_start(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     sync = str(request.GET.get("sync") or "").lower() in {"1", "true", "yes"}
     reuse = str(request.GET.get("reuse") or "").lower() in {"1", "true", "yes"}
     try:
@@ -446,8 +508,9 @@ def build_start(request, project_id):
 
 
 @require_POST
+@login_required
 def build_skip(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     current = read_build_status(project.project_dir)
     status = write_build_status(
         project.project_dir,
@@ -463,8 +526,9 @@ def build_skip(request, project_id):
 
 
 @require_GET
+@login_required
 def editor_data(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     if not project.entry_path.is_file():
         return JsonResponse({"error": "The project entry file is missing."}, status=404)
 
@@ -697,8 +761,9 @@ def editor_data(request, project_id):
 
 
 @require_GET
+@login_required
 def project_files(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     files = list_source_files(project.source_dir)
     image_suffixes = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".avif"}
     assets = [
@@ -725,8 +790,9 @@ def _pages_payload(project: WebsiteProject) -> dict:
 
 
 @require_http_methods(["GET", "POST"])
+@login_required
 def project_pages(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     if request.method == "GET":
         return JsonResponse(_pages_payload(project))
 
@@ -772,15 +838,17 @@ def project_pages(request, project_id):
 
 
 @require_GET
+@login_required
 def export_validate(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     report = validate_export(project.source_dir, project.entry_file)
     return JsonResponse(report)
 
 
 @require_http_methods(["GET", "POST"])
+@login_required
 def project_snapshots(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     if request.method == "GET":
         return JsonResponse({"snapshots": list_snapshots(project.project_dir)})
 
@@ -827,8 +895,9 @@ def project_snapshots(request, project_id):
 
 
 @require_http_methods(["GET", "POST"])
+@login_required
 def source_file(request, project_id, file_path):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     try:
         target = safe_project_path(project.source_dir, file_path)
     except FileNotFoundError as exc:
@@ -865,8 +934,9 @@ def source_file(request, project_id, file_path):
 
 
 @require_POST
+@login_required
 def set_entry_file(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -907,8 +977,9 @@ def set_entry_file(request, project_id):
 
 
 @require_POST
+@login_required
 def capture_route(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -952,8 +1023,9 @@ def capture_route(request, project_id):
 
 
 @require_POST
+@login_required
 def save_project(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -1089,8 +1161,9 @@ def save_project(request, project_id):
 
 
 @require_POST
+@login_required
 def upload_asset(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     uploaded = request.FILES.get("file")
     if uploaded is None:
         return JsonResponse({"error": "No image was uploaded."}, status=400)
@@ -1244,8 +1317,9 @@ def project_file(request, project_id, file_path):
 
 
 @require_GET
+@login_required
 def export_project(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     skip_parts = {
         "node_modules", ".git", "__pycache__", ".venv", "venv", ".next", ".nuxt",
         ".svelte-kit", ".turbo", ".cache", "coverage", ".idea", ".vscode",
@@ -1267,8 +1341,9 @@ def export_project(request, project_id):
 
 
 @require_POST
+@login_required
 def restore_original(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     if not project.original_zip_path.is_file():
         messages.error(request, "The original backup ZIP is missing.")
         return redirect("builder:editor", project_id=project.id)

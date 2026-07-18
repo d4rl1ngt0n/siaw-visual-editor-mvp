@@ -7,6 +7,7 @@ app_name = "builder"
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("pricing/", views.pricing, name="pricing"),
+    path("site-edit/save/", views.save_site_edit, name="save_site_edit"),
     path("login/", views.UserLoginView.as_view(), name="login"),
     path("signup/", views.signup, name="signup"),
     path("logout/", views.logout_view, name="logout"),
