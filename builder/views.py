@@ -38,7 +38,7 @@ from .services.archive import (
     safe_project_path,
 )
 from .services.ai_builder import ai_configured, ai_status, create_website_from_prompt
-from .services.site_edit import apply_site_edits, site_edit_allowed
+from .services.site_edit import apply_site_edits, save_site_edit_image, site_edit_allowed
 from .services.editor_assets import materialize_entry_for_visual_editor
 from .services.route_capture import (
     collect_stylesheet_refs,
@@ -211,6 +211,23 @@ def save_site_edit(request):
         return JsonResponse({"error": str(exc)}, status=400)
     except OSError as exc:
         return JsonResponse({"error": f"Could not write templates: {exc}"}, status=500)
+    return JsonResponse(result)
+
+
+@require_POST
+def upload_site_edit_image(request):
+    """Save a dropped/picked image for localhost marketing edits."""
+    if not site_edit_allowed(request):
+        return JsonResponse({"error": "Site editing is only available on local DEBUG servers."}, status=403)
+    upload = request.FILES.get("image") or request.FILES.get("file")
+    if not upload:
+        return JsonResponse({"error": "No image file provided."}, status=400)
+    try:
+        result = save_site_edit_image(upload)
+    except ValueError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    except OSError as exc:
+        return JsonResponse({"error": f"Could not save image: {exc}"}, status=500)
     return JsonResponse(result)
 
 
