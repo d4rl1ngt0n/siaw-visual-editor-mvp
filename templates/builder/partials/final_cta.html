@@ -1,17 +1,17 @@
 <section class="mkt-cta" aria-label="Get started">
   <div class="wrap mkt-cta-inner">
-    <div>
+    <div data-site-block="cta-copy:main">
       <p class="eyebrow" data-site-edit="cta.eyebrow">Ready when you are</p>
       <h2 class="mkt-heading mkt-heading-light" data-site-edit="cta.heading">Build the next site in Siaw.</h2>
       <p class="mkt-cta-lead" data-site-edit="cta.lead">Create a free account, prompt a draft, edit visually, and export when it looks right.</p>
     </div>
-    <div class="mkt-cta-actions">
+    <div class="mkt-cta-actions" data-site-block="cta-actions:main">
       {% if user.is_authenticated %}
-        <a class="btn btn-primary" href="#workspace">Open workspace</a>
-        <a class="btn btn-ghost" href="#pricing">View pricing</a>
+        <a class="btn btn-primary" data-site-edit="cta.primary.auth" href="#workspace">Open workspace</a>
+        <a class="btn btn-ghost" data-site-edit="cta.secondary.auth" href="#pricing">View pricing</a>
       {% else %}
-        <a class="btn btn-primary" href="{% url 'builder:signup' %}">Sign up free</a>
-        <a class="btn btn-ghost" href="#workspace">Go to workspace</a>
+        <a class="btn btn-primary" data-site-edit="cta.primary" href="{% url 'builder:signup' %}">Sign up free</a>
+        <a class="btn btn-ghost" data-site-edit="cta.secondary" href="#workspace">Go to workspace</a>
       {% endif %}
     </div>
   </div>

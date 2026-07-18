@@ -11,6 +11,7 @@
       panel.classList.toggle("is-hidden", panel.getAttribute("data-create-panel") !== name);
     });
   };
+  window.siawActivateCreateTab = activateTab;
   tabs.forEach((tab) => {
     tab.addEventListener("click", () => activateTab(tab.getAttribute("data-create-tab") || "ai"));
   });
@@ -566,6 +567,13 @@
     const transfer = new DataTransfer();
     transfer.items.add(file);
     fileInput.files = transfer.files;
+    window.dispatchEvent(new CustomEvent("siaw:upload-selected", {
+      detail: {
+        file,
+        name: nameInput?.value || "",
+        entryFile: entryInput?.value || "",
+      },
+    }));
   }
 
   async function fileLooksLikeZip(file) {
@@ -701,8 +709,16 @@
     const file = fileInput.files && fileInput.files[0];
     if (!file) {
       hidePreview();
+      window.dispatchEvent(new CustomEvent("siaw:upload-cleared"));
       return;
     }
+    window.dispatchEvent(new CustomEvent("siaw:upload-selected", {
+      detail: {
+        file,
+        name: nameInput?.value || "",
+        entryFile: entryInput?.value || "",
+      },
+    }));
     await previewSelectedFile(file);
   }
 
@@ -759,6 +775,7 @@
     fileInput.value = "";
     if (folderInput) folderInput.value = "";
     hidePreview();
+    window.dispatchEvent(new CustomEvent("siaw:upload-cleared"));
   });
 
   async function ingestFiles(fileList, source = "left") {
@@ -854,10 +871,256 @@
     fileInput.value = "";
     if (folderInput) folderInput.value = "";
     hidePreview();
+    window.dispatchEvent(new CustomEvent("siaw:upload-cleared"));
   });
   form.addEventListener("submit", () => {
     syncFormNameFromSide();
+    window.dispatchEvent(new CustomEvent("siaw:upload-cleared"));
   });
+
+  window.siawRestoreUploadDraft = async ({ file, name, entryFile } = {}) => {
+    if (!file) return;
+    if (name && nameInput) nameInput.value = name;
+    if (entryFile && entryInput) entryInput.value = entryFile;
+    assignFileToInput(file);
+    await previewSelectedFile(file);
+    syncSideNameFromForm();
+  };
+})();
+
+(() => {
+  const AI_KEY = "siaw.draft.ai";
+  const META_KEY = "siaw.draft.meta";
+  const IDB_NAME = "siaw-drafts";
+  const IDB_STORE = "blobs";
+  const UPLOAD_KEY = "upload";
+
+  const generateForm = document.querySelector("[data-generate-form]");
+  const uploadForm = document.querySelector("#uploadForm");
+  const nameAi = generateForm?.querySelector('input[name="name"]');
+  const promptAi = generateForm?.querySelector('textarea[name="prompt"]');
+  const nameUpload = uploadForm?.querySelector('input[name="name"]');
+  const entryUpload = uploadForm?.querySelector('input[name="entry_file"]');
+
+  const openDb = () => new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error("Could not open draft storage."));
+  });
+
+  const idbPut = async (key, value) => {
+    const db = await openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      tx.objectStore(IDB_STORE).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  };
+
+  const idbGet = async (key) => {
+    const db = await openDb();
+    const value = await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return value;
+  };
+
+  const idbDelete = async (key) => {
+    const db = await openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      tx.objectStore(IDB_STORE).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  };
+
+  const saveAiDraft = () => {
+    const payload = {
+      name: nameAi?.value || "",
+      prompt: promptAi?.value || "",
+      updatedAt: Date.now(),
+    };
+    if (!payload.name.trim() && !payload.prompt.trim()) {
+      sessionStorage.removeItem(AI_KEY);
+      return;
+    }
+    sessionStorage.setItem(AI_KEY, JSON.stringify(payload));
+  };
+
+  const saveMeta = (tab) => {
+    sessionStorage.setItem(META_KEY, JSON.stringify({ tab, updatedAt: Date.now() }));
+  };
+
+  const readAiDraft = () => {
+    try {
+      return JSON.parse(sessionStorage.getItem(AI_KEY) || "null");
+    } catch (_) {
+      return null;
+    }
+  };
+
+  const readMeta = () => {
+    try {
+      return JSON.parse(sessionStorage.getItem(META_KEY) || "null");
+    } catch (_) {
+      return null;
+    }
+  };
+
+  nameAi?.addEventListener("input", saveAiDraft);
+  promptAi?.addEventListener("input", saveAiDraft);
+  nameUpload?.addEventListener("input", () => {
+    const file = uploadForm?.querySelector('input[name="website_zip"]')?.files?.[0];
+    if (!file) return;
+    void idbPut(UPLOAD_KEY, {
+      name: nameUpload.value || "",
+      entryFile: entryUpload?.value || "",
+      file,
+      fileName: file.name,
+      fileType: file.type,
+      updatedAt: Date.now(),
+    });
+  });
+
+  window.addEventListener("siaw:upload-selected", (event) => {
+    const detail = event.detail || {};
+    if (!detail.file) return;
+    saveMeta("import");
+    void idbPut(UPLOAD_KEY, {
+      name: detail.name || nameUpload?.value || "",
+      entryFile: detail.entryFile || entryUpload?.value || "",
+      file: detail.file,
+      fileName: detail.file.name,
+      fileType: detail.file.type,
+      updatedAt: Date.now(),
+    });
+  });
+
+  window.addEventListener("siaw:upload-cleared", () => {
+    void idbDelete(UPLOAD_KEY);
+  });
+
+  generateForm?.addEventListener("submit", () => {
+    sessionStorage.removeItem(AI_KEY);
+  });
+
+  const flushDraftsBeforeAuth = async (tab) => {
+    if (tab === "ai" || !tab) saveAiDraft();
+    if (tab) saveMeta(tab);
+    const fileInput = uploadForm?.querySelector('input[name="website_zip"]');
+    const file = fileInput?.files?.[0];
+    if (file) {
+      await idbPut(UPLOAD_KEY, {
+        name: nameUpload?.value || "",
+        entryFile: entryUpload?.value || "",
+        file,
+        fileName: file.name,
+        fileType: file.type,
+        updatedAt: Date.now(),
+      });
+      saveMeta("import");
+    }
+  };
+
+  document.querySelectorAll("[data-auth-continue]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      const tab = link.getAttribute("data-auth-continue") || "ai";
+      event.preventDefault();
+      void flushDraftsBeforeAuth(tab).finally(() => {
+        window.location.href = link.href;
+      });
+    });
+  });
+
+  const showDraftNotice = (message) => {
+    const workspace = document.querySelector("#workspace");
+    if (!workspace || document.querySelector("[data-draft-notice]")) return;
+    const notice = document.createElement("div");
+    notice.className = "draft-notice";
+    notice.setAttribute("data-draft-notice", "1");
+    notice.innerHTML = `<strong>Draft restored</strong><span>${message}</span>`;
+    const intro = workspace.querySelector(".workspace-intro");
+    if (intro) intro.insertAdjacentElement("afterend", notice);
+    else workspace.prepend(notice);
+  };
+
+  const DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+  const isFresh = (stamp) => typeof stamp === "number" && (Date.now() - stamp) < DRAFT_MAX_AGE_MS;
+
+  const restoreDrafts = async () => {
+    let ai = readAiDraft();
+    if (ai && !isFresh(ai.updatedAt)) {
+      sessionStorage.removeItem(AI_KEY);
+      ai = null;
+    }
+    let upload = await idbGet(UPLOAD_KEY).catch(() => null);
+    if (upload && !isFresh(upload.updatedAt)) {
+      await idbDelete(UPLOAD_KEY).catch(() => null);
+      upload = null;
+    }
+    let meta = readMeta();
+    if (meta && !isFresh(meta.updatedAt)) {
+      sessionStorage.removeItem(META_KEY);
+      meta = null;
+    }
+
+    let restoredTab = meta?.tab || null;
+    let didRestore = false;
+
+    if (ai && (ai.name || ai.prompt)) {
+      if (nameAi && !nameAi.value) nameAi.value = ai.name || "";
+      if (promptAi && !promptAi.value) promptAi.value = ai.prompt || "";
+      restoredTab = restoredTab || "ai";
+      didRestore = true;
+    }
+
+    if (upload?.file && typeof window.siawRestoreUploadDraft === "function") {
+      await window.siawRestoreUploadDraft({
+        file: upload.file,
+        name: upload.name || "",
+        entryFile: upload.entryFile || "",
+      });
+      restoredTab = "import";
+      didRestore = true;
+    }
+
+    if (!didRestore) return;
+
+    if (restoredTab && typeof window.siawActivateCreateTab === "function") {
+      window.siawActivateCreateTab(restoredTab);
+    }
+
+    const fromAuth = /\/(login|signup)\/?/i.test(document.referrer || "");
+    const workspace = document.querySelector("#workspace");
+    if (workspace && (fromAuth || window.location.hash === "#workspace")) {
+      if (window.location.hash !== "#workspace") {
+        window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#workspace`);
+      }
+      workspace.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    if (fromAuth) {
+      if (restoredTab === "import") {
+        showDraftNotice("Your import is ready. Continue below to open it in the editor.");
+      } else {
+        showDraftNotice("Your AI prompt is ready. Continue below to generate.");
+      }
+    }
+  };
+
+  void restoreDrafts();
 })();
 
 (() => {

@@ -43,8 +43,8 @@
         <span class="nav-user">{{ user.get_username }}</span>
         <a class="btn-nav btn-nav-ghost" href="{% url 'builder:logout' %}">Log out</a>
       {% else %}
-        <a class="btn-nav btn-nav-ghost" href="{% url 'builder:login' %}">Log in</a>
-        <a class="btn-nav btn-nav-primary" href="{% url 'builder:signup' %}">Sign up</a>
+        <a class="btn-nav btn-nav-ghost" href="{% url 'builder:login' %}?next=%2F%23workspace">Log in</a>
+        <a class="btn-nav btn-nav-primary" href="{% url 'builder:signup' %}?next=%2F%23workspace">Sign up</a>
       {% endif %}
       {% endblock %}
     </nav>

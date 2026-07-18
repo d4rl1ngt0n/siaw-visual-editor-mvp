@@ -15,10 +15,8 @@ TEMPLATE_ROOT = Path(settings.BASE_DIR) / "templates" / "builder"
 STATIC_SITE_EDITS = Path(settings.BASE_DIR) / "static" / "builder" / "site-edits"
 KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,80}$", re.I)
 GROUP_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,40}$", re.I)
-BLOCK_ATTR_RE = re.compile(
-    r'data-site-block="(?P<group>[a-z0-9_.-]+):(?P<key>[a-z0-9_.-]+)"',
-    re.I,
-)
+ITEM_VALUE_RE = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,100}$", re.I)
+ALLOWED_REORDER_ATTRS = {"data-site-edit", "data-site-block"}
 IMAGE_EXTS = {
     "image/jpeg": ".jpg",
     "image/jpg": ".jpg",
@@ -130,12 +128,11 @@ def _extract_element_span(content: str, start: int, tag: str) -> tuple[int, int]
     return None
 
 
-def _extract_block(content: str, group: str, key: str) -> tuple[int, int, str] | None:
-    needle = f'data-site-block="{group}:{key}"'
+def _extract_by_attr(content: str, attr: str, value: str) -> tuple[int, int, str] | None:
+    needle = f'{attr}="{value}"'
     attr_at = content.find(needle)
     if attr_at < 0:
-        # allow single quotes
-        needle = f"data-site-block='{group}:{key}'"
+        needle = f"{attr}='{value}'"
         attr_at = content.find(needle)
     if attr_at < 0:
         return None
@@ -150,16 +147,20 @@ def _extract_block(content: str, group: str, key: str) -> tuple[int, int, str] |
     return a, b, content[a:b]
 
 
-def _reorder_blocks(content: str, group: str, order: list[str]) -> tuple[str, bool]:
+def _extract_block(content: str, group: str, key: str) -> tuple[int, int, str] | None:
+    return _extract_by_attr(content, "data-site-block", f"{group}:{key}")
+
+
+def _reorder_items(content: str, items: list[tuple[str, str]]) -> tuple[str, bool]:
+    """Reorder elements identified by (attr, value) pairs within one contiguous region."""
     blocks: list[tuple[int, int, str, str]] = []
-    for key in order:
-        extracted = _extract_block(content, group, key)
+    for attr, value in items:
+        extracted = _extract_by_attr(content, attr, value)
         if not extracted:
             return content, False
         start, end, html_block = extracted
-        blocks.append((start, end, key, html_block))
+        blocks.append((start, end, f"{attr}={value}", html_block))
 
-    # Ensure all blocks share one contiguous sibling region (no overlap, sorted).
     blocks_sorted = sorted(blocks, key=lambda item: item[0])
     for i in range(1, len(blocks_sorted)):
         if blocks_sorted[i][0] < blocks_sorted[i - 1][1]:
@@ -167,23 +168,26 @@ def _reorder_blocks(content: str, group: str, order: list[str]) -> tuple[str, bo
 
     region_start = blocks_sorted[0][0]
     region_end = blocks_sorted[-1][1]
-
-    # Preserve interstitial whitespace/text between original blocks by
-    # rebuilding with separators from the original sequence.
     separators: list[str] = []
     for i in range(len(blocks_sorted) - 1):
         separators.append(content[blocks_sorted[i][1]: blocks_sorted[i + 1][0]])
 
-    by_key = {key: html_block for _, _, key, html_block in blocks}
-    pieces = [by_key[order[0]]]
-    for idx, key in enumerate(order[1:], start=0):
+    by_id = {item_id: html_block for _, _, item_id, html_block in blocks}
+    order_ids = [f"{attr}={value}" for attr, value in items]
+    pieces = [by_id[order_ids[0]]]
+    for idx, item_id in enumerate(order_ids[1:], start=0):
         sep = separators[idx] if idx < len(separators) else "\n"
         pieces.append(sep)
-        pieces.append(by_key[key])
+        pieces.append(by_id[item_id])
     rebuilt = "".join(pieces)
     if content[region_start:region_end] == rebuilt:
         return content, False
     return content[:region_start] + rebuilt + content[region_end:], True
+
+
+def _reorder_blocks(content: str, group: str, order: list[str]) -> tuple[str, bool]:
+    items = [("data-site-block", f"{group}:{key}") for key in order]
+    return _reorder_items(content, items)
 
 
 def save_site_edit_image(upload) -> dict:
@@ -219,7 +223,8 @@ def apply_site_edits(edits: list[dict]) -> dict:
     """
     Apply edits shaped like:
       {"key": "hero.headline", "value": "...", "kind": "text"|"src"}
-      {"kind": "reorder", "group": "services", "order": ["services.1", ...]}
+      {"kind": "reorder", "group": "services", "order": ["1", "2", ...]}
+      {"kind": "reorder_items", "items": [{"attr": "data-site-edit", "key": "hero.lead"}, ...]}
     Writes into templates under templates/builder/.
     """
     if not isinstance(edits, list) or not edits:
@@ -231,11 +236,36 @@ def apply_site_edits(edits: list[dict]) -> dict:
 
     pending_text: list[tuple[str, str, str]] = []
     pending_reorder: list[tuple[str, list[str]]] = []
+    pending_reorder_items: list[list[tuple[str, str]]] = []
 
     for item in edits:
         if not isinstance(item, dict):
             continue
         kind = str(item.get("kind") or "text").strip().lower()
+        if kind == "reorder_items":
+            raw_items = item.get("items")
+            if not isinstance(raw_items, list) or len(raw_items) < 2:
+                raise ValueError("reorder_items needs at least two items.")
+            cleaned_items: list[tuple[str, str]] = []
+            seen: set[str] = set()
+            for raw in raw_items:
+                if not isinstance(raw, dict):
+                    continue
+                attr = str(raw.get("attr") or "").strip()
+                value = str(raw.get("key") or raw.get("value") or "").strip()
+                if attr not in ALLOWED_REORDER_ATTRS:
+                    raise ValueError(f"Unsupported reorder attr: {attr!r}")
+                if not ITEM_VALUE_RE.match(value):
+                    raise ValueError(f"Invalid reorder item key: {value!r}")
+                token = f"{attr}={value}"
+                if token in seen:
+                    raise ValueError(f"Duplicate reorder item: {value}")
+                seen.add(token)
+                cleaned_items.append((attr, value))
+            if len(cleaned_items) < 2:
+                raise ValueError("reorder_items needs at least two valid items.")
+            pending_reorder_items.append(cleaned_items)
+            continue
         if kind == "reorder":
             group = str(item.get("group") or "").strip()
             order = item.get("order")
@@ -276,13 +306,41 @@ def apply_site_edits(edits: list[dict]) -> dict:
                 raise ValueError(f"Image URL for {key} must be http(s), site-relative, or data:image.")
         pending_text.append((key, value, kind))
 
-    if not pending_text and not pending_reorder:
+    if not pending_text and not pending_reorder and not pending_reorder_items:
         raise ValueError("No valid edits provided.")
 
     originals = {path: path.read_text(encoding="utf-8") for path in files}
     working = dict(originals)
     applied: list[dict] = []
     missing: list[str] = []
+
+    for items in pending_reorder_items:
+        found = False
+        needle = f'{items[0][0]}="{items[0][1]}"'
+        for path, content in working.items():
+            if needle not in content and f"{items[0][0]}='{items[0][1]}'" not in content:
+                continue
+            next_content, ok = _reorder_items(content, items)
+            if ok:
+                working[path] = next_content
+                applied.append({
+                    "kind": "reorder_items",
+                    "count": len(items),
+                    "file": path.relative_to(TEMPLATE_ROOT).as_posix(),
+                })
+                found = True
+                break
+            if all(_extract_by_attr(content, attr, value) for attr, value in items):
+                applied.append({
+                    "kind": "reorder_items",
+                    "count": len(items),
+                    "file": path.relative_to(TEMPLATE_ROOT).as_posix(),
+                    "unchanged": True,
+                })
+                found = True
+                break
+        if not found:
+            missing.append("reorder_items:" + ",".join(value for _, value in items[:3]))
 
     for group, order in pending_reorder:
         found = False

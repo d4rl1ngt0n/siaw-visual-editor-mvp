@@ -29,18 +29,18 @@
 
 <section class="mkt-feature" id="features" aria-label="Features" data-site-block="mkt:features-ai">
   <div class="wrap mkt-split">
-    <div class="mkt-copy">
+    <div class="mkt-copy" data-site-block="features-copy:ai">
       <p class="eyebrow" data-site-edit="features.ai.eyebrow">AI Builder</p>
       <h2 class="mkt-heading" data-site-edit="features.ai.heading">From brief to first draft in one pass.</h2>
       <p class="mkt-body" data-site-edit="features.ai.body">Tell Siaw the brand name, sector, location, audience, and tone. Get a specialized layout with real sections, copy, and imagery, not a generic template dump.</p>
       <ul class="mkt-list">
-        <li>Sector-aware structure and typography</li>
-        <li>Multipage navigation when the brief needs it</li>
-        <li>Editable HTML that opens straight in Safe Edit</li>
+        <li data-site-edit="features.ai.list.1">Sector-aware structure and typography</li>
+        <li data-site-edit="features.ai.list.2">Multipage navigation when the brief needs it</li>
+        <li data-site-edit="features.ai.list.3">Editable HTML that opens straight in Safe Edit</li>
       </ul>
-      <a class="btn btn-ink" href="#workspace">Try the AI Builder</a>
+      <a class="btn btn-ink" data-site-edit="features.ai.cta" href="#workspace">Try the AI Builder</a>
     </div>
-    <figure class="mkt-media">
+    <figure class="mkt-media" data-site-block="features-media:ai">
       <img data-site-edit="features.ai.image" src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80" alt="Laptop showing a website design workspace" loading="lazy">
     </figure>
   </div>
@@ -48,18 +48,18 @@
 
 <section class="mkt-feature mkt-feature-alt" aria-label="Safe Edit" data-site-block="mkt:features-edit">
   <div class="wrap mkt-split mkt-split-reverse">
-    <div class="mkt-copy">
+    <div class="mkt-copy" data-site-block="features-copy:edit">
       <p class="eyebrow" data-site-edit="features.edit.eyebrow">Safe Edit</p>
       <h2 class="mkt-heading" data-site-edit="features.edit.heading">Finish by hand where AI stops.</h2>
       <p class="mkt-body" data-site-edit="features.edit.body">Drag images into place, rewrite headlines, swap sections, and keep the design on-brand. Built for freelancers and studios who still want control.</p>
       <ul class="mkt-list">
-        <li>Click-to-edit copy and media</li>
-        <li>Page manager for multipage sites</li>
-        <li>Live preview before you export</li>
+        <li data-site-edit="features.edit.list.1">Click-to-edit copy and media</li>
+        <li data-site-edit="features.edit.list.2">Page manager for multipage sites</li>
+        <li data-site-edit="features.edit.list.3">Live preview before you export</li>
       </ul>
-      <a class="btn btn-ink" href="{% url 'builder:signup' %}">Create a free account</a>
+      <a class="btn btn-ink" data-site-edit="features.edit.cta" href="{% url 'builder:signup' %}">Create a free account</a>
     </div>
-    <figure class="mkt-media">
+    <figure class="mkt-media" data-site-block="features-media:edit">
       <img data-site-edit="features.edit.image" src="https://images.unsplash.com/photo-1586717791821-3f44a563fa4c?auto=format&fit=crop&w=1200&q=80" alt="Designer arranging images on a screen" loading="lazy">
     </figure>
   </div>

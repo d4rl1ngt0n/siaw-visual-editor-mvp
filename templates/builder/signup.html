@@ -4,7 +4,7 @@
 {% block body_class %}page-auth{% endblock %}
 {% block meta_description %}Create a free Siaw account to prompt websites, edit visually, and export clean HTML.{% endblock %}
 {% block top_nav %}
-  <a class="btn-nav btn-nav-ghost" href="{% url 'builder:login' %}">Log in</a>
+  <a class="btn-nav btn-nav-ghost" href="{% url 'builder:login' %}?next=%2F%23workspace">Log in</a>
 {% endblock %}
 {% block site_footer %}{% endblock %}
 
@@ -35,6 +35,7 @@
 
       <form method="post" class="auth-form" novalidate>
         {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next|default:'/#workspace' }}">
         {% if form.non_field_errors %}
           <div class="auth-errors" role="alert">
             {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
@@ -69,7 +70,7 @@
         <button type="submit" class="auth-submit">Create account</button>
       </form>
 
-      <p class="auth-switch">Already have an account? <a href="{% url 'builder:login' %}">Log in</a></p>
+      <p class="auth-switch">Already have an account? <a href="{% url 'builder:login' %}?next=%2F%23workspace">Log in</a></p>
     </div>
   </section>
 </main>

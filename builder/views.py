@@ -238,12 +238,20 @@ _POST_ONLY_NEXT_PREFIXES = (
 )
 
 
+def workspace_url() -> str:
+    return f"{reverse('builder:dashboard')}#workspace"
+
+
 def _safe_post_login_url(candidate: str) -> str:
     """Avoid 405s when login ?next= points at a POST-only create endpoint."""
-    path = (candidate or "").strip() or reverse("builder:dashboard")
+    path = (candidate or "").strip() or workspace_url()
     for prefix in _POST_ONLY_NEXT_PREFIXES:
         if path == prefix or path.startswith(prefix + "?"):
-            return f"{reverse('builder:dashboard')}#workspace"
+            return workspace_url()
+    dash = reverse("builder:dashboard")
+    bare = path.split("#", 1)[0]
+    if bare in {"", "/", dash} or bare.rstrip("/") == dash.rstrip("/"):
+        return workspace_url()
     return path
 
 
@@ -251,6 +259,9 @@ class UserLoginView(LoginView):
     template_name = "builder/login.html"
     authentication_form = LoginForm
     redirect_authenticated_user = True
+
+    def get_default_redirect_url(self):
+        return workspace_url()
 
     def get_success_url(self):
         return _safe_post_login_url(super().get_success_url())
@@ -287,15 +298,22 @@ class UserLoginView(LoginView):
 
 @require_http_methods(["GET", "POST"])
 def signup(request):
+    next_url = _safe_post_login_url(
+        request.POST.get("next") or request.GET.get("next") or workspace_url()
+    )
     if request.user.is_authenticated:
-        return redirect("builder:dashboard")
+        return redirect(next_url)
     form = SignUpForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         user = form.save()
         auth_login(request, user)
         messages.success(request, "Welcome to Siaw. Your account is ready.")
-        return redirect("builder:dashboard")
-    return render(request, "builder/signup.html", {"form": form})
+        return redirect(next_url)
+    return render(
+        request,
+        "builder/signup.html",
+        {"form": form, "next": next_url},
+    )
 
 
 @require_http_methods(["GET", "POST"])

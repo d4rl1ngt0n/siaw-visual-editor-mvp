@@ -4,7 +4,7 @@
 {% block body_class %}page-auth{% endblock %}
 {% block meta_description %}Log in to Siaw Visual Editor to open your workspace and continue editing.{% endblock %}
 {% block top_nav %}
-  <a class="btn-nav btn-nav-ghost" href="{% url 'builder:signup' %}">Sign up</a>
+  <a class="btn-nav btn-nav-ghost" href="{% url 'builder:signup' %}?next=%2F%23workspace">Sign up</a>
 {% endblock %}
 {% block site_footer %}{% endblock %}
 
@@ -44,6 +44,7 @@
 
       <form method="post" class="auth-form" novalidate>
         {% csrf_token %}
+        <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value|default:'/#workspace' }}">
         {% if form.non_field_errors %}
           <div class="auth-errors" role="alert">
             {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
@@ -65,7 +66,7 @@
         <button type="submit" class="auth-submit">Log in</button>
       </form>
 
-      <p class="auth-switch">New here? <a href="{% url 'builder:signup' %}">Create an account</a></p>
+      <p class="auth-switch">New here? <a href="{% url 'builder:signup' %}?next=%2F%23workspace">Create an account</a></p>
     </div>
   </section>
 </main>

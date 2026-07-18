@@ -1342,6 +1342,37 @@ button, input, textarea { font: inherit; }
   background: #ebe6dc;
   color: var(--ink);
 }
+.auth-continue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.auth-continue-actions .primary-btn,
+.auth-continue-actions .btn {
+  margin: 0;
+}
+.draft-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: baseline;
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid #d7e4d2;
+  background: #f3f8f1;
+  color: var(--ink);
+}
+.draft-notice strong {
+  font-size: 13px;
+  font-weight: 750;
+}
+.draft-notice span {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+}
 
 .upload-form { display: grid; gap: 17px; }
 .upload-form label > span {

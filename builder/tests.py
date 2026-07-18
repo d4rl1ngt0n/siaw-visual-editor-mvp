@@ -905,6 +905,7 @@ class AIWebsiteBuilderTests(TestCase):
         self.assertContains(response, "Create with AI")
         self.assertContains(response, "generateForm")
         self.assertContains(response, "Log in to generate")
+        self.assertContains(response, "next=%2F%23workspace")
         self.assertContains(response, "Sign up")
         self.assertContains(response, "Pricing")
         self.assertContains(response, 'id="pricing"')
@@ -960,6 +961,47 @@ class AIWebsiteBuilderTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_site_edit_reorder_and_image_upload(self):
+        from pathlib import Path
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        pricing = Path(__file__).resolve().parents[1] / "templates" / "builder" / "partials" / "pricing_section.html"
+        original = pricing.read_text(encoding="utf-8")
+        png = bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+            "0000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082"
+        )
+        uploaded_path = None
+        try:
+            with self.settings(DEBUG=True):
+                upload = self.client.post(
+                    reverse("builder:upload_site_edit_image"),
+                    {"image": SimpleUploadedFile("dot.png", png, content_type="image/png")},
+                    HTTP_HOST="127.0.0.1",
+                )
+                self.assertEqual(upload.status_code, 200, upload.content)
+                url = upload.json()["url"]
+                uploaded_path = Path(__file__).resolve().parents[1] / upload.json()["path"]
+                self.assertTrue(uploaded_path.is_file())
+
+                save = self.client.post(
+                    reverse("builder:save_site_edit"),
+                    data=json.dumps({
+                        "edits": [{"kind": "reorder", "group": "pricing", "order": ["studio", "free", "pro"]}],
+                    }),
+                    content_type="application/json",
+                    HTTP_HOST="127.0.0.1",
+                )
+            self.assertEqual(save.status_code, 200, save.content)
+            text = pricing.read_text(encoding="utf-8")
+            self.assertLess(text.index('data-site-block="pricing:studio"'), text.index('data-site-block="pricing:free"'))
+            self.assertTrue(url.startswith("/static/builder/site-edits/"))
+        finally:
+            pricing.write_text(original, encoding="utf-8")
+            if uploaded_path and uploaded_path.exists():
+                uploaded_path.unlink()
+
     def test_project_thumbnail_uses_hero_image(self):
         from builder.services.thumbnails import project_thumbnail
 
@@ -989,6 +1031,7 @@ class AIWebsiteBuilderTests(TestCase):
             data={"username": "demo", "password": "siawdemo123"},
         )
         self.assertEqual(login.status_code, 302)
+        self.assertIn("/#workspace", login["Location"])
         dash = self.client.get(reverse("builder:dashboard"))
         self.assertContains(dash, "Log out")
         self.assertContains(dash, "demo")
@@ -1010,6 +1053,7 @@ class AIWebsiteBuilderTests(TestCase):
             },
         )
         self.assertEqual(signup.status_code, 302)
+        self.assertIn("/#workspace", signup["Location"])
         self.assertTrue(User.objects.filter(username="harborhost").exists())
 
         self.client.get(reverse("builder:logout"))
@@ -1018,6 +1062,7 @@ class AIWebsiteBuilderTests(TestCase):
             data={"username": "harborhost", "password": "siaw-test-pass-99"},
         )
         self.assertEqual(login.status_code, 302)
+        self.assertIn("/#workspace", login["Location"])
         dash = self.client.get(reverse("builder:dashboard"))
         self.assertContains(dash, "Log out")
         self.assertContains(dash, "harborhost")

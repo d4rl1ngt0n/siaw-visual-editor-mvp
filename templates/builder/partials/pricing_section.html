@@ -6,24 +6,24 @@
   </div>
 
   <div class="pricing-grid wrap">
-    <article class="price-plan">
-      <p class="plan-name">Free</p>
-      <p class="plan-price"><span>$0</span> / month</p>
-      <p class="plan-blurb">For trying the editor and shipping a first site.</p>
+    <article class="price-plan" data-site-block="pricing:free">
+      <p class="plan-name" data-site-edit="pricing.free.name">Free</p>
+      <p class="plan-price"><span data-site-edit="pricing.free.price">$0</span> / month</p>
+      <p class="plan-blurb" data-site-edit="pricing.free.blurb">For trying the editor and shipping a first site.</p>
       <ul class="plan-features">
         <li>3 AI site generations / month</li>
         <li>2 active projects</li>
         <li>Visual Safe Edit</li>
         <li>HTML / ZIP import and export</li>
       </ul>
-      <a class="btn btn-line" href="{% url 'builder:signup' %}">Start free</a>
+      <a class="btn btn-line" data-site-edit="pricing.free.cta" href="{% url 'builder:signup' %}">Start free</a>
     </article>
 
-    <article class="price-plan is-featured">
-      <p class="plan-badge">Most used</p>
-      <p class="plan-name">Pro</p>
-      <p class="plan-price"><span>$29</span> / month</p>
-      <p class="plan-blurb">For freelancers shipping client sites every week.</p>
+    <article class="price-plan is-featured" data-site-block="pricing:pro">
+      <p class="plan-badge" data-site-edit="pricing.pro.badge">Most used</p>
+      <p class="plan-name" data-site-edit="pricing.pro.name">Pro</p>
+      <p class="plan-price"><span data-site-edit="pricing.pro.price">$29</span> / month</p>
+      <p class="plan-blurb" data-site-edit="pricing.pro.blurb">For freelancers shipping client sites every week.</p>
       <ul class="plan-features">
         <li>60 AI site generations / month</li>
         <li>Unlimited projects</li>
@@ -31,13 +31,13 @@
         <li>Priority export validation</li>
         <li>Email support</li>
       </ul>
-      <a class="btn btn-primary" href="{% url 'builder:signup' %}">Get Pro</a>
+      <a class="btn btn-primary" data-site-edit="pricing.pro.cta" href="{% url 'builder:signup' %}">Get Pro</a>
     </article>
 
-    <article class="price-plan">
-      <p class="plan-name">Studio</p>
-      <p class="plan-price"><span>$79</span> / month</p>
-      <p class="plan-blurb">For agencies running multiple brands in parallel.</p>
+    <article class="price-plan" data-site-block="pricing:studio">
+      <p class="plan-name" data-site-edit="pricing.studio.name">Studio</p>
+      <p class="plan-price"><span data-site-edit="pricing.studio.price">$79</span> / month</p>
+      <p class="plan-blurb" data-site-edit="pricing.studio.blurb">For agencies running multiple brands in parallel.</p>
       <ul class="plan-features">
         <li>Unlimited AI generations</li>
         <li>Team seats (up to 5)</li>
@@ -45,7 +45,7 @@
         <li>Custom brand presets</li>
         <li>Priority support</li>
       </ul>
-      <a class="btn btn-line" href="{% url 'builder:signup' %}">Get Studio</a>
+      <a class="btn btn-line" data-site-edit="pricing.studio.cta" href="{% url 'builder:signup' %}">Get Studio</a>
     </article>
   </div>
 

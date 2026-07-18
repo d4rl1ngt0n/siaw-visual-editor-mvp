@@ -122,6 +122,7 @@ MEDIA_ROOT = DATA_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGIN_URL = "builder:login"
+# Named URL only; LoginView.get_default_redirect_url appends #workspace.
 LOGIN_REDIRECT_URL = "builder:dashboard"
 LOGOUT_REDIRECT_URL = "builder:dashboard"
 
