@@ -1,0 +1,11 @@
+{% extends "builder/base_site.html" %}
+
+{% block title %}Pricing | Siaw{% endblock %}
+{% block meta_description %}Siaw Visual Editor pricing for Free, Pro, and Studio plans.{% endblock %}
+{% block body_class %}page-pricing{% endblock %}
+
+{% block content %}
+<main class="pricing-page">
+  {% include "builder/partials/pricing_section.html" %}
+</main>
+{% endblock %}

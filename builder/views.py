@@ -12,6 +12,9 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
 from django.contrib import messages
+from django.contrib.auth import login as auth_login
+from django.contrib.auth import logout as auth_logout
+from django.contrib.auth.views import LoginView
 from django.core.exceptions import ValidationError
 from django.core.files import File
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
@@ -23,7 +26,7 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from django.conf import settings as django_settings
 
-from .forms import WebsiteGenerateForm, WebsiteUploadForm
+from .forms import LoginForm, SignUpForm, WebsiteGenerateForm, WebsiteUploadForm
 from .models import WebsiteProject
 from .services.archive import (
     StylesheetParser,
@@ -152,8 +155,12 @@ def _isolated_runtime_url(request, project: WebsiteProject) -> str:
 
 
 def _dashboard_context(**extra):
+    from .services.thumbnails import attach_project_thumbnails
+
+    projects = list(WebsiteProject.objects.all())
     context = {
-        "projects": WebsiteProject.objects.all(),
+        "projects": projects,
+        "project_rows": attach_project_thumbnails(projects),
         "form": WebsiteUploadForm(),
         "generate_form": WebsiteGenerateForm(),
         "ai_configured": ai_configured(),
@@ -167,6 +174,38 @@ def _dashboard_context(**extra):
 @require_GET
 def dashboard(request):
     return render(request, "builder/dashboard.html", _dashboard_context())
+
+
+@require_GET
+def pricing(request):
+    return render(request, "builder/pricing.html")
+
+
+class UserLoginView(LoginView):
+    template_name = "builder/login.html"
+    authentication_form = LoginForm
+    redirect_authenticated_user = True
+
+
+@require_http_methods(["GET", "POST"])
+def signup(request):
+    if request.user.is_authenticated:
+        return redirect("builder:dashboard")
+    form = SignUpForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        user = form.save()
+        auth_login(request, user)
+        messages.success(request, "Welcome to Siaw. Your account is ready.")
+        return redirect("builder:dashboard")
+    return render(request, "builder/signup.html", {"form": form})
+
+
+@require_http_methods(["GET", "POST"])
+def logout_view(request):
+    if request.user.is_authenticated:
+        auth_logout(request)
+        messages.info(request, "You are logged out.")
+    return redirect("builder:dashboard")
 
 
 @require_POST

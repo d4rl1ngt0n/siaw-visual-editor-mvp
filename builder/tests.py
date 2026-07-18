@@ -852,6 +852,54 @@ class AIWebsiteBuilderTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Create with AI")
         self.assertContains(response, "generateForm")
+        self.assertContains(response, "Sign up")
+        self.assertContains(response, "Pricing")
+        self.assertContains(response, 'id="pricing"')
+        self.assertContains(response, "hero-demo")
+        self.assertContains(response, "Drop to replace")
+
+    def test_project_thumbnail_uses_hero_image(self):
+        from builder.services.thumbnails import project_thumbnail
+
+        project = WebsiteProject.objects.create(name="Thumb Site", entry_file="index.html")
+        source = project.source_dir
+        source.mkdir(parents=True, exist_ok=True)
+        (source / "index.html").write_text(
+            '<!doctype html><html><body><img src="https://images.unsplash.com/photo-test.jpg" alt="Hero"></body></html>',
+            encoding="utf-8",
+        )
+        thumb = project_thumbnail(project)
+        self.assertEqual(thumb["kind"], "image")
+        self.assertIn("unsplash.com", thumb["src"])
+
+    def test_signup_login_logout_and_pricing(self):
+        from django.contrib.auth.models import User
+
+        pricing = self.client.get(reverse("builder:pricing"))
+        self.assertEqual(pricing.status_code, 200)
+        self.assertContains(pricing, "Pro")
+
+        signup = self.client.post(
+            reverse("builder:signup"),
+            data={
+                "username": "harborhost",
+                "email": "host@harbor.test",
+                "password1": "siaw-test-pass-99",
+                "password2": "siaw-test-pass-99",
+            },
+        )
+        self.assertEqual(signup.status_code, 302)
+        self.assertTrue(User.objects.filter(username="harborhost").exists())
+
+        self.client.get(reverse("builder:logout"))
+        login = self.client.post(
+            reverse("builder:login"),
+            data={"username": "harborhost", "password": "siaw-test-pass-99"},
+        )
+        self.assertEqual(login.status_code, 302)
+        dash = self.client.get(reverse("builder:dashboard"))
+        self.assertContains(dash, "Log out")
+        self.assertContains(dash, "harborhost")
 
     def test_generate_project_offline_opens_safe_edit(self):
         response = self.client.post(

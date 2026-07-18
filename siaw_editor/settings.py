@@ -97,6 +97,10 @@ MEDIA_ROOT = DATA_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+LOGIN_URL = "builder:login"
+LOGIN_REDIRECT_URL = "builder:dashboard"
+LOGOUT_REDIRECT_URL = "builder:dashboard"
+
 # Local MVP upload limits. ZIP validation also enforces independent limits.
 DATA_UPLOAD_MAX_MEMORY_SIZE = 30 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024

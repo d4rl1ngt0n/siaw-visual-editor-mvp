@@ -1,0 +1,49 @@
+{% extends "builder/base_site.html" %}
+{% load static %}
+
+{% block title %}Log in | Siaw{% endblock %}
+{% block body_class %}page-auth{% endblock %}
+
+{% block content %}
+<main class="auth-layout">
+  <aside class="auth-visual" aria-hidden="true">
+    <div class="auth-visual-glow"></div>
+    <div class="auth-visual-card">
+      <p class="auth-visual-brand">Siaw</p>
+      <p class="auth-visual-line">Prompt a site.</p>
+      <p class="auth-visual-line">Drag the image.</p>
+      <p class="auth-visual-line">Export clean HTML.</p>
+      <div class="auth-visual-tiles">
+        <img src="https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=600&q=80" alt="">
+        <img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=600&q=80" alt="">
+        <img src="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=600&q=80" alt="">
+      </div>
+    </div>
+  </aside>
+  <section class="auth-shell">
+    <div class="auth-card">
+      <p class="eyebrow">Welcome back</p>
+      <h1>Log in to Siaw</h1>
+      <p class="auth-lead">Open your workspace, continue editing, and export when you are ready.</p>
+      <form method="post" class="upload-form auth-form" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+          {% for error in form.non_field_errors %}<small class="error">{{ error }}</small>{% endfor %}
+        {% endif %}
+        <label>
+          <span>Username</span>
+          {{ form.username }}
+          {% for error in form.username.errors %}<small class="error">{{ error }}</small>{% endfor %}
+        </label>
+        <label>
+          <span>Password</span>
+          {{ form.password }}
+          {% for error in form.password.errors %}<small class="error">{{ error }}</small>{% endfor %}
+        </label>
+        <button type="submit" class="primary-btn">Log in</button>
+      </form>
+      <p class="auth-switch">New here? <a href="{% url 'builder:signup' %}">Create an account</a></p>
+    </div>
+  </section>
+</main>
+{% endblock %}

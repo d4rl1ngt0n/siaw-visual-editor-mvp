@@ -1,0 +1,55 @@
+<section class="pricing-block" id="pricing" aria-label="Pricing">
+  <div class="pricing-hero wrap">
+    <p class="eyebrow">Pricing</p>
+    <h2 class="pricing-title">Simple plans for prompting and editing sites.</h2>
+    <p class="pricing-lead">Start free. Upgrade when you need more AI generations, projects, and client-ready exports.</p>
+  </div>
+
+  <div class="pricing-grid wrap">
+    <article class="price-plan">
+      <p class="plan-name">Free</p>
+      <p class="plan-price"><span>$0</span> / month</p>
+      <p class="plan-blurb">For trying the editor and shipping a first site.</p>
+      <ul class="plan-features">
+        <li>3 AI site generations / month</li>
+        <li>2 active projects</li>
+        <li>Visual Safe Edit</li>
+        <li>HTML / ZIP import and export</li>
+      </ul>
+      <a class="btn btn-line" href="{% url 'builder:signup' %}">Start free</a>
+    </article>
+
+    <article class="price-plan is-featured">
+      <p class="plan-badge">Most used</p>
+      <p class="plan-name">Pro</p>
+      <p class="plan-price"><span>$29</span> / month</p>
+      <p class="plan-blurb">For freelancers shipping client sites every week.</p>
+      <ul class="plan-features">
+        <li>60 AI site generations / month</li>
+        <li>Unlimited projects</li>
+        <li>Multipage sites and page manager</li>
+        <li>Priority export validation</li>
+        <li>Email support</li>
+      </ul>
+      <a class="btn btn-primary" href="{% url 'builder:signup' %}">Get Pro</a>
+    </article>
+
+    <article class="price-plan">
+      <p class="plan-name">Studio</p>
+      <p class="plan-price"><span>$79</span> / month</p>
+      <p class="plan-blurb">For agencies running multiple brands in parallel.</p>
+      <ul class="plan-features">
+        <li>Unlimited AI generations</li>
+        <li>Team seats (up to 5)</li>
+        <li>Shared project library</li>
+        <li>Custom brand presets</li>
+        <li>Priority support</li>
+      </ul>
+      <a class="btn btn-line" href="{% url 'builder:signup' %}">Get Studio</a>
+    </article>
+  </div>
+
+  <div class="pricing-note wrap">
+    <p>Billing is illustrative for this MVP. Accounts work now; plan limits will wire up as billing lands.</p>
+  </div>
+</section>

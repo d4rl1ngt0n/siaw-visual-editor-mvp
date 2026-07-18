@@ -1,0 +1,65 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Siaw Visual Editor{% endblock %}</title>
+  <meta name="description" content="{% block meta_description %}Prompt a website, edit it visually, and export clean HTML.{% endblock %}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Syne:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'builder/ui-dialog.css' %}">
+  <link rel="stylesheet" href="{% static 'builder/dashboard.css' %}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <header class="topbar">
+    <a href="{% url 'builder:dashboard' %}" class="brand">
+      <span class="brand-mark" aria-hidden="true">S</span>
+      <span class="brand-text">
+        <strong>Siaw</strong>
+        <small>Visual Editor</small>
+      </span>
+    </a>
+    <nav class="top-nav" aria-label="Primary">
+      <a class="nav-link-secondary" href="{% url 'builder:dashboard' %}#workspace">Build</a>
+      <a href="{% url 'builder:dashboard' %}#pricing">Pricing</a>
+      {% if user.is_authenticated %}
+        <a class="nav-link-secondary" href="{% url 'builder:dashboard' %}#projects">Projects</a>
+        <span class="nav-user">{{ user.get_username }}</span>
+        <a class="btn-nav btn-nav-ghost" href="{% url 'builder:logout' %}">Log out</a>
+      {% else %}
+        <a class="btn-nav btn-nav-ghost" href="{% url 'builder:login' %}">Log in</a>
+        <a class="btn-nav btn-nav-primary" href="{% url 'builder:signup' %}">Sign up</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  {% if messages %}
+    <div class="messages wrap">
+      {% for message in messages %}<div class="message {{ message.tags }}">{{ message }}</div>{% endfor %}
+    </div>
+  {% endif %}
+
+  {% block content %}{% endblock %}
+
+  <footer class="site-footer">
+    <div class="wrap footer-row">
+      <span>Siaw Visual Editor</span>
+      <nav class="footer-nav" aria-label="Footer">
+        <a href="{% url 'builder:dashboard' %}#pricing">Pricing</a>
+        {% if user.is_authenticated %}
+          <a href="{% url 'builder:logout' %}">Log out</a>
+        {% else %}
+          <a href="{% url 'builder:login' %}">Log in</a>
+          <a href="{% url 'builder:signup' %}">Sign up</a>
+        {% endif %}
+      </nav>
+    </div>
+  </footer>
+  {% block scripts %}
+  <script src="{% static 'builder/ui-dialog.js' %}" defer></script>
+  {% endblock %}
+</body>
+</html>

@@ -6,6 +6,10 @@ app_name = "builder"
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("pricing/", views.pricing, name="pricing"),
+    path("login/", views.UserLoginView.as_view(), name="login"),
+    path("signup/", views.signup, name="signup"),
+    path("logout/", views.logout_view, name="logout"),
     path("projects/generate/", views.generate_project, name="generate_project"),
     path("projects/upload/", views.upload_project, name="upload_project"),
     path("projects/<uuid:project_id>/delete/", views.delete_project, name="delete_project"),

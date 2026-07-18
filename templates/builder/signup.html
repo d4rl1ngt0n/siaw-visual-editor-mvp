@@ -1,0 +1,59 @@
+{% extends "builder/base_site.html" %}
+{% load static %}
+
+{% block title %}Sign up | Siaw{% endblock %}
+{% block body_class %}page-auth{% endblock %}
+
+{% block content %}
+<main class="auth-layout">
+  <aside class="auth-visual" aria-hidden="true">
+    <div class="auth-visual-glow"></div>
+    <div class="auth-visual-card">
+      <p class="auth-visual-brand">Siaw</p>
+      <p class="auth-visual-line">Free to start.</p>
+      <p class="auth-visual-line">Edit by clicking.</p>
+      <p class="auth-visual-line">Ship when it looks right.</p>
+      <div class="auth-visual-tiles">
+        <img src="https://images.unsplash.com/photo-1541643600914-78b084683601?auto=format&fit=crop&w=600&q=80" alt="">
+        <img src="https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=600&q=80" alt="">
+        <img src="https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=600&q=80" alt="">
+      </div>
+    </div>
+  </aside>
+  <section class="auth-shell">
+    <div class="auth-card">
+      <p class="eyebrow">Get started</p>
+      <h1>Create your Siaw account</h1>
+      <p class="auth-lead">Prompt sites, edit visually, and export clean HTML. No card required to begin.</p>
+      <form method="post" class="upload-form auth-form" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+          {% for error in form.non_field_errors %}<small class="error">{{ error }}</small>{% endfor %}
+        {% endif %}
+        <label>
+          <span>Username</span>
+          {{ form.username }}
+          {% for error in form.username.errors %}<small class="error">{{ error }}</small>{% endfor %}
+        </label>
+        <label>
+          <span>Email</span>
+          {{ form.email }}
+          {% for error in form.email.errors %}<small class="error">{{ error }}</small>{% endfor %}
+        </label>
+        <label>
+          <span>Password</span>
+          {{ form.password1 }}
+          {% for error in form.password1.errors %}<small class="error">{{ error }}</small>{% endfor %}
+        </label>
+        <label>
+          <span>Confirm password</span>
+          {{ form.password2 }}
+          {% for error in form.password2.errors %}<small class="error">{{ error }}</small>{% endfor %}
+        </label>
+        <button type="submit" class="primary-btn">Sign up</button>
+      </form>
+      <p class="auth-switch">Already have an account? <a href="{% url 'builder:login' %}">Log in</a></p>
+    </div>
+  </section>
+</main>
+{% endblock %}
