@@ -79,6 +79,7 @@
   function setStatus(text, state = "") {
     saveStatus.textContent = text;
     saveStatus.className = `save-status ${state}`.trim();
+    window.siawEditorLayout?.markSaveDirty?.(state === "dirty" || dirty);
   }
 
   function markDirty() {
@@ -3068,6 +3069,7 @@
     if (isHtmlPath(path) && !codeMode && editor) {
       activeSourcePath = path;
       renderFileTree(loadedData?.files || [], path);
+      window.siawEditorLayout?.closeMobileDrawers?.();
       return;
     }
     const response = await fetch(sourceFileUrl(path), { headers: { Accept: "application/json" } });
@@ -3080,6 +3082,7 @@
     dirty = false;
     codeEditorReady = true;
     editorReady = true;
+    window.siawEditorLayout?.closeMobileDrawers?.();
     setStatus("All changes saved", "saved");
   }
 
@@ -3185,13 +3188,277 @@
     return savingPromise;
   }
 
+  function isMobileLayout() {
+    return window.matchMedia("(max-width: 900px)").matches;
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function initPanelChrome() {
+    const shell = document.getElementById("editorShell");
+    const root = document.documentElement;
+    const backdrop = document.getElementById("panelBackdrop");
+    const mobileDock = document.getElementById("mobileDock");
+    const leftResizer = document.getElementById("leftResizer");
+    const rightResizer = document.getElementById("rightResizer");
+    const expandLeftBtn = document.getElementById("expandLeftBtn");
+    const expandRightBtn = document.getElementById("expandRightBtn");
+    const toggleLeftPanelBtn = document.getElementById("toggleLeftPanelBtn");
+    const toggleRightPanelBtn = document.getElementById("toggleRightPanelBtn");
+    if (!shell) return;
+
+    const storageKey = "siaw-editor-layout-v1";
+    const defaults = { leftWidth: 244, rightWidth: 284, leftCollapsed: false, rightCollapsed: false };
+    let layout = { ...defaults };
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
+      if (saved && typeof saved === "object") layout = { ...defaults, ...saved };
+    } catch (_error) {
+      layout = { ...defaults };
+    }
+
+    let mobileView = "canvas";
+    let resizeState = null;
+
+    function persist() {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(layout));
+      } catch (_error) {
+        /* ignore quota / private mode */
+      }
+    }
+
+    function refreshEditorCanvas() {
+      window.requestAnimationFrame(() => {
+        try {
+          editor?.refresh?.();
+        } catch (_error) {
+          /* editor may not be ready */
+        }
+      });
+    }
+
+    function applyDesktopWidths() {
+      root.style.setProperty("--left-panel-w", `${layout.leftWidth}px`);
+      root.style.setProperty("--right-panel-w", `${layout.rightWidth}px`);
+    }
+
+    function syncCollapseClasses() {
+      shell.classList.toggle("left-collapsed", !!layout.leftCollapsed);
+      shell.classList.toggle("right-collapsed", !!layout.rightCollapsed);
+      toggleLeftPanelBtn?.setAttribute("aria-pressed", layout.leftCollapsed ? "false" : "true");
+      toggleRightPanelBtn?.setAttribute("aria-pressed", layout.rightCollapsed ? "false" : "true");
+    }
+
+    function setMobileDockActive(view) {
+      mobileView = view;
+      mobileDock?.querySelectorAll("[data-mobile-view]").forEach((button) => {
+        const active = button.dataset.mobileView === view;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+    }
+
+    function closeMobileDrawers() {
+      document.body.classList.remove("mobile-left-open", "mobile-right-open");
+      if (backdrop) backdrop.hidden = true;
+      setMobileDockActive("canvas");
+    }
+
+    function openMobilePanel(side) {
+      document.body.classList.add("mobile-layout");
+      if (side === "left") {
+        document.body.classList.add("mobile-left-open");
+        document.body.classList.remove("mobile-right-open");
+        layout.leftCollapsed = false;
+        setMobileDockActive("files");
+      } else {
+        document.body.classList.add("mobile-right-open");
+        document.body.classList.remove("mobile-left-open");
+        layout.rightCollapsed = false;
+        setMobileDockActive("inspect");
+      }
+      if (backdrop) backdrop.hidden = false;
+      syncCollapseClasses();
+      refreshEditorCanvas();
+    }
+
+    function applyLayoutMode() {
+      const mobile = isMobileLayout();
+      document.body.classList.toggle("mobile-layout", mobile);
+      applyDesktopWidths();
+      if (mobile) {
+        shell.classList.remove("left-collapsed", "right-collapsed");
+        if (!document.body.classList.contains("mobile-left-open") && !document.body.classList.contains("mobile-right-open")) {
+          if (backdrop) backdrop.hidden = true;
+          setMobileDockActive("canvas");
+        }
+      } else {
+        document.body.classList.remove("mobile-left-open", "mobile-right-open");
+        if (backdrop) backdrop.hidden = true;
+        syncCollapseClasses();
+      }
+      refreshEditorCanvas();
+    }
+
+    function setCollapsed(side, collapsed) {
+      if (side === "left") layout.leftCollapsed = collapsed;
+      else layout.rightCollapsed = collapsed;
+      persist();
+      if (isMobileLayout()) {
+        if (collapsed) closeMobileDrawers();
+        else openMobilePanel(side);
+        return;
+      }
+      syncCollapseClasses();
+      refreshEditorCanvas();
+    }
+
+    function togglePanel(side) {
+      if (isMobileLayout()) {
+        const openClass = side === "left" ? "mobile-left-open" : "mobile-right-open";
+        if (document.body.classList.contains(openClass)) closeMobileDrawers();
+        else openMobilePanel(side);
+        return;
+      }
+      const collapsed = side === "left" ? layout.leftCollapsed : layout.rightCollapsed;
+      setCollapsed(side, !collapsed);
+    }
+
+    window.siawEditorLayout = {
+      closeMobileDrawers,
+      openMobilePanel,
+      isMobileLayout,
+      markSaveDirty(isDirty) {
+        mobileDock?.querySelector(".mobile-dock-save")?.classList.toggle("is-dirty", !!isDirty);
+      },
+    };
+
+    document.querySelectorAll("[data-collapse]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const side = button.dataset.collapse === "right" ? "right" : "left";
+        if (isMobileLayout()) closeMobileDrawers();
+        else setCollapsed(side, true);
+      });
+    });
+
+    expandLeftBtn?.addEventListener("click", () => setCollapsed("left", false));
+    expandRightBtn?.addEventListener("click", () => setCollapsed("right", false));
+    toggleLeftPanelBtn?.addEventListener("click", () => togglePanel("left"));
+    toggleRightPanelBtn?.addEventListener("click", () => togglePanel("right"));
+    backdrop?.addEventListener("click", () => closeMobileDrawers());
+
+    mobileDock?.querySelectorAll("[data-mobile-view]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const view = button.dataset.mobileView;
+        if (view === "save") {
+          void saveProject();
+          return;
+        }
+        if (view === "files") {
+          openMobilePanel("left");
+          return;
+        }
+        if (view === "inspect") {
+          openMobilePanel("right");
+          return;
+        }
+        closeMobileDrawers();
+      });
+    });
+
+    function startResize(side, event) {
+      if (isMobileLayout()) return;
+      event.preventDefault();
+      const startX = event.clientX ?? event.touches?.[0]?.clientX;
+      if (typeof startX !== "number") return;
+      resizeState = {
+        side,
+        startX,
+        startWidth: side === "left" ? layout.leftWidth : layout.rightWidth,
+      };
+      shell.classList.add("is-resizing");
+      const handle = side === "left" ? leftResizer : rightResizer;
+      handle?.setAttribute("data-active", "true");
+    }
+
+    function onResizeMove(event) {
+      if (!resizeState) return;
+      const clientX = event.clientX ?? event.touches?.[0]?.clientX;
+      if (typeof clientX !== "number") return;
+      const delta = clientX - resizeState.startX;
+      if (resizeState.side === "left") {
+        layout.leftWidth = clamp(resizeState.startWidth + delta, 180, 480);
+      } else {
+        layout.rightWidth = clamp(resizeState.startWidth - delta, 200, 520);
+      }
+      applyDesktopWidths();
+      refreshEditorCanvas();
+    }
+
+    function stopResize() {
+      if (!resizeState) return;
+      resizeState = null;
+      shell.classList.remove("is-resizing");
+      leftResizer?.removeAttribute("data-active");
+      rightResizer?.removeAttribute("data-active");
+      persist();
+      refreshEditorCanvas();
+    }
+
+    leftResizer?.addEventListener("pointerdown", (event) => startResize("left", event));
+    rightResizer?.addEventListener("pointerdown", (event) => startResize("right", event));
+    window.addEventListener("pointermove", onResizeMove);
+    window.addEventListener("pointerup", stopResize);
+    window.addEventListener("pointercancel", stopResize);
+
+    [leftResizer, rightResizer].forEach((handle) => {
+      handle?.addEventListener("keydown", (event) => {
+        if (isMobileLayout()) return;
+        const side = handle.dataset.resize === "right" ? "right" : "left";
+        const step = event.shiftKey ? 32 : 12;
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          if (side === "left") layout.leftWidth = clamp(layout.leftWidth - step, 180, 480);
+          else layout.rightWidth = clamp(layout.rightWidth + step, 200, 520);
+          applyDesktopWidths();
+          persist();
+          refreshEditorCanvas();
+        }
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          if (side === "left") layout.leftWidth = clamp(layout.leftWidth + step, 180, 480);
+          else layout.rightWidth = clamp(layout.rightWidth - step, 200, 520);
+          applyDesktopWidths();
+          persist();
+          refreshEditorCanvas();
+        }
+      });
+    });
+
+    window.addEventListener("resize", () => {
+      applyLayoutMode();
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && isMobileLayout()) closeMobileDrawers();
+    });
+
+    applyLayoutMode();
+  }
+
   function bindInterface() {
+    initPanelChrome();
+
     document.querySelectorAll(".panel-tab").forEach((button) => {
       button.addEventListener("click", () => {
         document.querySelectorAll(".panel-tab").forEach((item) => item.classList.remove("active"));
         document.querySelectorAll(".panel-content").forEach((item) => item.classList.remove("active"));
         button.classList.add("active");
         document.getElementById(button.dataset.target).classList.add("active");
+        if (isMobileLayout()) openMobilePanel("left");
       });
     });
 
@@ -3201,6 +3468,7 @@
         document.querySelectorAll(".right-content").forEach((item) => item.classList.remove("active"));
         button.classList.add("active");
         document.getElementById(button.dataset.target).classList.add("active");
+        if (isMobileLayout()) openMobilePanel("right");
       });
     });
 
