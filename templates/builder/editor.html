@@ -3,11 +3,24 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{{ project.name }} | Siaw Visual Editor</title>
   <link rel="stylesheet" href="{% static 'vendor/grapesjs/grapes.min.css' %}">
   <link rel="stylesheet" href="{% static 'builder/ui-dialog.css' %}">
-  <link rel="stylesheet" href="{% static 'builder/editor.css' %}?v=layout-2">
+  <link rel="stylesheet" href="{% static 'builder/editor.css' %}?v=layout-3">
+  <script>
+    (function () {
+      var mq = window.matchMedia("(max-width: 1024px)");
+      function syncMobileClass() {
+        document.documentElement.classList.toggle("is-mobile-editor", mq.matches);
+        if (document.body) document.body.classList.toggle("mobile-layout", mq.matches);
+      }
+      syncMobileClass();
+      if (mq.addEventListener) mq.addEventListener("change", syncMobileClass);
+      else if (mq.addListener) mq.addListener(syncMobileClass);
+      document.addEventListener("DOMContentLoaded", syncMobileClass);
+    })();
+  </script>
 </head>
 <body class="editor-body">
   <header class="editor-topbar">
@@ -207,6 +220,6 @@
   {{ editor_config|json_script:"editor-config" }}
   <script src="{% static 'vendor/grapesjs/grapes.min.js' %}"></script>
   <script src="{% static 'builder/ui-dialog.js' %}"></script>
-  <script src="{% static 'builder/editor.js' %}?v=layout-1"></script>
+  <script src="{% static 'builder/editor.js' %}?v=layout-3"></script>
 </body>
 </html>

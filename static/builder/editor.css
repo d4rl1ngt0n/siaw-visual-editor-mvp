@@ -430,8 +430,9 @@ body.mobile-layout .restore-form { right: 12px; }
   .device-switcher { display: none; }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1024px) {
   :root { --mobile-dock-h: 64px; }
+  html.is-mobile-editor,
   body.mobile-layout {
     --left-panel-w: min(92vw, 360px);
     --right-panel-w: min(94vw, 380px);
@@ -459,33 +460,40 @@ body.mobile-layout .restore-form { right: 12px; }
   .topbar-actions { grid-area: actions; gap: 5px; }
   .project-title strong, .project-title small { max-width: 42vw; }
   .save-status { display: none; }
-  .mode-switcher, .device-switcher { display: flex; }
+  .mode-switcher, .device-switcher { display: flex !important; }
   .mode-btn, .device-btn { padding: 7px 9px; font-size: 10px; white-space: nowrap; }
   .primary-btn { padding: 8px 10px; }
   .editor-shell {
     height: calc(100% - 56px - var(--mobile-dock-h));
-    display: block;
+    display: block !important;
     position: relative;
     overflow: hidden;
+  }
+  .editor-shell > .left-panel,
+  .editor-shell > .right-panel,
+  .editor-shell > .canvas-area {
+    grid-column: auto !important;
+    grid-row: auto !important;
   }
   .editor-shell .panel-resizer { display: none !important; }
   .editor-shell .panel-expand-rail { display: none !important; }
   .canvas-area {
-    position: absolute;
+    position: absolute !important;
     inset: 0;
     padding: 10px;
     z-index: 1;
+    width: auto !important;
   }
   .left-panel,
   .right-panel {
-    position: absolute;
+    position: absolute !important;
     top: 0;
     bottom: 0;
     width: var(--left-panel-w);
     max-width: 94vw;
     z-index: 28;
-    visibility: visible;
-    pointer-events: auto;
+    visibility: visible !important;
+    pointer-events: auto !important;
     box-shadow: 0 18px 48px rgba(15, 18, 22, .28);
     transition: transform 220ms ease-out;
   }
@@ -500,13 +508,10 @@ body.mobile-layout .restore-form { right: 12px; }
     border-left: 1px solid var(--line);
     transform: translateX(105%);
   }
-  body.mobile-layout.mobile-left-open .left-panel { transform: translateX(0); }
-  body.mobile-layout.mobile-right-open .right-panel { transform: translateX(0); }
-  body.mobile-layout.mobile-left-open .editor-shell.left-collapsed .left-panel,
-  body.mobile-layout.mobile-right-open .editor-shell.right-collapsed .right-panel {
-    visibility: visible;
-    pointer-events: auto;
-  }
+  body.mobile-left-open .left-panel,
+  html.is-mobile-editor.mobile-left-open .left-panel { transform: translateX(0); }
+  body.mobile-right-open .right-panel,
+  html.is-mobile-editor.mobile-right-open .right-panel { transform: translateX(0); }
   .interactive-mode,
   .safe-edit-shell-empty { inset: 10px; }
   .editor-notice {
@@ -517,7 +522,7 @@ body.mobile-layout .restore-form { right: 12px; }
     max-width: none;
   }
   .mobile-dock {
-    display: grid;
+    display: grid !important;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     position: fixed;
     left: 0;
@@ -542,6 +547,7 @@ body.mobile-layout .restore-form { right: 12px; }
     font-size: 10px;
     font-weight: 700;
     cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
   .mobile-dock-btn .mobile-dock-icon { font-size: 15px; line-height: 1; }
   .mobile-dock-btn.is-active,
@@ -558,7 +564,7 @@ body.mobile-layout .restore-form { right: 12px; }
   }
 }
 
-@media (max-width: 1320px) and (min-width: 901px) {
+@media (max-width: 1320px) and (min-width: 1025px) {
   .mode-switcher .mode-btn { padding: 7px 9px; font-size: 10px; }
 }
 
@@ -648,8 +654,8 @@ body.mobile-layout .restore-form { right: 12px; }
 .report-region span { color: #6c757e; text-align: right; }
 .report-mode-btn { width: 100%; margin-top: 9px; border: 0; border-radius: 8px; padding: 9px; background: #171717; color: white; cursor: pointer; font-size: 9px; font-weight: 800; }
 
-@media (max-width: 900px) {
-  .mode-switcher { display: flex; }
+@media (max-width: 1024px) {
+  .mode-switcher { display: flex !important; }
 }
 
 /* MVP 4B navigation manager and dynamic component capture */
