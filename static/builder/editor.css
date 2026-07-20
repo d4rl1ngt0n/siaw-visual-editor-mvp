@@ -64,10 +64,16 @@ a { color: inherit; text-decoration: none; }
   height: calc(100% - 64px - var(--mobile-dock-h));
   display: grid;
   grid-template-columns: var(--shell-left) var(--shell-left-resizer) minmax(0, 1fr) var(--shell-right-resizer) var(--shell-right);
+  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
   width: 100%;
   position: relative;
 }
+.editor-shell > .left-panel { grid-column: 1; grid-row: 1; min-width: 0; }
+.editor-shell > #leftResizer { grid-column: 2; grid-row: 1; }
+.editor-shell > .canvas-area { grid-column: 3; grid-row: 1; min-width: 0; }
+.editor-shell > #rightResizer { grid-column: 4; grid-row: 1; }
+.editor-shell > .right-panel { grid-column: 5; grid-row: 1; min-width: 0; }
 .editor-shell.left-collapsed {
   --shell-left: 0px;
   --shell-left-resizer: 0px;
@@ -77,9 +83,16 @@ a { color: inherit; text-decoration: none; }
   --shell-right-resizer: 0px;
 }
 .editor-shell.left-collapsed .left-panel,
-.editor-shell.right-collapsed .right-panel { visibility: hidden; pointer-events: none; }
+.editor-shell.right-collapsed .right-panel {
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+}
 .editor-shell.left-collapsed #leftResizer,
-.editor-shell.right-collapsed #rightResizer { display: none; }
+.editor-shell.right-collapsed #rightResizer {
+  visibility: hidden;
+  pointer-events: none;
+}
 .editor-shell.is-resizing { cursor: col-resize; user-select: none; }
 .editor-shell.is-resizing iframe { pointer-events: none; }
 .js-build-overlay {
