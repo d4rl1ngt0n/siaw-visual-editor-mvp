@@ -16,7 +16,11 @@
         <li>Visual Safe Edit</li>
         <li>HTML / ZIP import and export</li>
       </ul>
-      <a class="btn btn-line" data-site-edit="pricing.free.cta" href="{% url 'builder:signup' %}">Start free</a>
+      {% if user.is_authenticated %}
+        <a class="btn btn-line" data-site-edit="pricing.free.cta.auth" href="{% url 'builder:account' %}?plan=free#plan">Manage Free</a>
+      {% else %}
+        <a class="btn btn-line" data-site-edit="pricing.free.cta" href="{% url 'builder:signup' %}">Start free</a>
+      {% endif %}
     </article>
 
     <article class="price-plan is-featured" data-site-block="pricing:pro">
@@ -31,7 +35,11 @@
         <li>Priority export validation</li>
         <li>Email support</li>
       </ul>
-      <a class="btn btn-primary" data-site-edit="pricing.pro.cta" href="{% url 'builder:signup' %}">Get Pro</a>
+      {% if user.is_authenticated %}
+        <a class="btn btn-primary" data-site-edit="pricing.pro.cta.auth" href="{% url 'builder:account' %}?plan=pro#plan">Upgrade to Pro</a>
+      {% else %}
+        <a class="btn btn-primary" data-site-edit="pricing.pro.cta" href="{% url 'builder:signup' %}?next={% url 'builder:account' %}%3Fplan%3Dpro%23plan">Get Pro</a>
+      {% endif %}
     </article>
 
     <article class="price-plan" data-site-block="pricing:studio">
@@ -45,11 +53,15 @@
         <li>Custom brand presets</li>
         <li>Priority support</li>
       </ul>
-      <a class="btn btn-line" data-site-edit="pricing.studio.cta" href="{% url 'builder:signup' %}">Get Studio</a>
+      {% if user.is_authenticated %}
+        <a class="btn btn-line" data-site-edit="pricing.studio.cta.auth" href="{% url 'builder:account' %}?plan=studio#plan">Upgrade to Studio</a>
+      {% else %}
+        <a class="btn btn-line" data-site-edit="pricing.studio.cta" href="{% url 'builder:signup' %}?next={% url 'builder:account' %}%3Fplan%3Dstudio%23plan">Get Studio</a>
+      {% endif %}
     </article>
   </div>
 
   <div class="pricing-note wrap">
-    <p>Billing is illustrative for this MVP. Accounts work now; plan limits will wire up as billing lands.</p>
+    <p>Billing is illustrative for this MVP. Plan limits are enforced now. Change your plan anytime from Account.</p>
   </div>
 </section>

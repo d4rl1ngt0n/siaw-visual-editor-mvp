@@ -263,7 +263,7 @@ class UploadSecurityTests(TestCase):
         self.assertTrue(project.entry_path.is_file())
         self.assertIn("Hello", project.entry_path.read_text(encoding="utf-8"))
 
-    def test_delete_project_removes_files_and_record(self):
+    def test_delete_project_soft_deletes_then_purge_removes_files(self):
         project = WebsiteProject.objects.create(
             name="Disposable",
             entry_file="index.html",
@@ -275,6 +275,11 @@ class UploadSecurityTests(TestCase):
         self.assertTrue(project_dir.is_dir())
         response = self.client.post(reverse("builder:delete_project", args=[project.id]))
         self.assertEqual(response.status_code, 302)
+        project.refresh_from_db()
+        self.assertIsNotNone(project.deleted_at)
+        self.assertTrue(project_dir.exists())
+        purged = self.client.post(reverse("builder:purge_project", args=[project.id]))
+        self.assertEqual(purged.status_code, 302)
         self.assertFalse(WebsiteProject.objects.filter(id=project.id).exists())
         self.assertFalse(project_dir.exists())
 
@@ -822,6 +827,42 @@ class CaptureFidelityTests(TestCase):
         inline_blob = "\n".join(body.get("inlineStyles") or [])
         self.assertIn("body{color:red}", inline_blob)
 
+    def test_recover_shopify_media_urls_from_ngrok_proxy(self):
+        from builder.services.editor_assets import recover_shopify_media_urls
+
+        html = (
+            '<img src="https://abc.ngrok-free.app/s/files/1/0982/2925/6474/files/hero.png?v=1">'
+            '<img src="/s/files/1/0982/2925/6474/files/card.png">'
+            '<img src="https://cdn.shopify.com/s/files/1/0982/2925/6474/files/ok.png">'
+        )
+        fixed = recover_shopify_media_urls(html)
+        self.assertIn("https://cdn.shopify.com/s/files/1/0982/2925/6474/files/hero.png?v=1", fixed)
+        self.assertIn("https://cdn.shopify.com/s/files/1/0982/2925/6474/files/card.png", fixed)
+        self.assertIn("https://cdn.shopify.com/s/files/1/0982/2925/6474/files/ok.png", fixed)
+        self.assertNotIn("ngrok-free.app", fixed)
+        self.assertNotIn('src="/s/files/', fixed)
+
+    def test_localize_shopify_media_downloads_into_project(self):
+        from unittest.mock import patch
+
+        from builder.services.remote_media import localize_shopify_media_in_text
+
+        html = (
+            '<img src="https://abc.ngrok-free.app/s/files/1/0982/2925/6474/files/hero.png?v=1">'
+            '<img src="https://cdn.shopify.com/s/files/1/0982/2925/6474/files/card.png">'
+        )
+        png = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+            b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00"
+            b"\x01\x01\x01\x00\x18\xdd\x8d\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        with patch("builder.services.remote_media.download_remote_image", return_value=png):
+            updated, count = localize_shopify_media_in_text(html, self.project.source_dir)
+        self.assertEqual(count, 2)
+        self.assertIn("images/shopify/", updated)
+        self.assertNotIn("ngrok-free.app", updated)
+        self.assertNotIn("cdn.shopify.com", updated)
+        self.assertTrue(any((self.project.source_dir / "images" / "shopify").glob("*.png")))
     def test_inline_css_promotes_at_import_to_canvas_styles(self):
         from builder.services.editor_assets import inline_local_stylesheets
 
@@ -903,9 +944,9 @@ class AIWebsiteBuilderTests(TestCase):
         response = self.client.get(reverse("builder:dashboard"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Create with AI")
-        self.assertContains(response, "generateForm")
-        self.assertContains(response, "Log in to generate")
-        self.assertContains(response, "next=%2F%23workspace")
+        self.assertContains(response, "Log in to build")
+        self.assertContains(response, "next=/workspace/ai/")
+        self.assertContains(response, "personal AI Builder")
         self.assertContains(response, "Sign up")
         self.assertContains(response, "Pricing")
         self.assertContains(response, 'id="pricing"')
@@ -1031,10 +1072,37 @@ class AIWebsiteBuilderTests(TestCase):
             data={"username": "demo", "password": "siawdemo123"},
         )
         self.assertEqual(login.status_code, 302)
-        self.assertIn("/#workspace", login["Location"])
+        self.assertIn("/workspace/", login["Location"])
+        workspace = self.client.get(reverse("builder:workspace"))
+        self.assertContains(workspace, "Open AI Builder")
+        self.assertContains(workspace, "Log out")
+        self.assertContains(workspace, "demo")
+        ai_entry = self.client.get(f"{reverse('builder:ai_builder')}?new=1")
+        self.assertEqual(ai_entry.status_code, 302)
+        self.assertIn("/workspace/ai/", ai_entry["Location"])
+        wizard = self.client.get(ai_entry["Location"])
+        self.assertEqual(wizard.status_code, 200)
+        self.assertContains(wizard, "Creative brief")
+        self.assertContains(wizard, "Tell us about your idea.")
+        self.assertContains(wizard, "data-step-panel")
+        self.assertContains(wizard, "Step 1 of 2")
+        self.assertContains(wizard, "industrySelect")
+        self.assertNotContains(wizard, "How should we begin?")
+        self.assertNotContains(wizard, "Create something new")
+        self.assertNotContains(wizard, "Redesign a website")
+        self.assertNotContains(wizard, "Main button text")
+        prompt_page = self.client.get(reverse("builder:ai_builder_prompt"))
+        self.assertEqual(prompt_page.status_code, 200)
+        self.assertContains(prompt_page, "generateForm")
+        self.assertContains(prompt_page, "Advanced path")
+        self.assertContains(prompt_page, "Use guided brief")
+        self.assertContains(prompt_page, "Open the guided brief instead")
+        self.assertContains(prompt_page, "Prefer guided questions?")
+        workspace = self.client.get(reverse("builder:workspace"))
+        self.assertContains(workspace, "Advanced: paste a prompt")
         dash = self.client.get(reverse("builder:dashboard"))
-        self.assertContains(dash, "Log out")
-        self.assertContains(dash, "demo")
+        self.assertNotContains(dash, "Start building now")
+        self.assertContains(dash, "Open AI Builder")
 
     def test_signup_login_logout_and_pricing(self):
         from django.contrib.auth.models import User
@@ -1053,7 +1121,7 @@ class AIWebsiteBuilderTests(TestCase):
             },
         )
         self.assertEqual(signup.status_code, 302)
-        self.assertIn("/#workspace", signup["Location"])
+        self.assertIn("/workspace/", signup["Location"])
         self.assertTrue(User.objects.filter(username="harborhost").exists())
 
         self.client.get(reverse("builder:logout"))
@@ -1062,25 +1130,25 @@ class AIWebsiteBuilderTests(TestCase):
             data={"username": "harborhost", "password": "siaw-test-pass-99"},
         )
         self.assertEqual(login.status_code, 302)
-        self.assertIn("/#workspace", login["Location"])
-        dash = self.client.get(reverse("builder:dashboard"))
-        self.assertContains(dash, "Log out")
-        self.assertContains(dash, "harborhost")
+        self.assertIn("/workspace/", login["Location"])
+        workspace = self.client.get(reverse("builder:workspace"))
+        self.assertContains(workspace, "Log out")
+        self.assertContains(workspace, "harborhost")
 
-    def test_login_next_upload_redirects_to_dashboard(self):
+    def test_login_next_upload_redirects_to_workspace(self):
         User.objects.create_user(username="uploadnext", password="siaw-test-pass-99")
         response = self.client.post(
             f"{reverse('builder:login')}?next=/projects/upload/",
             data={"username": "uploadnext", "password": "siaw-test-pass-99"},
         )
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/#workspace", response["Location"])
+        self.assertIn("/workspace/", response["Location"])
 
-    def test_upload_get_redirects_to_dashboard(self):
+    def test_upload_get_redirects_to_workspace(self):
         self.client.force_login(self.user)
         response = self.client.get(reverse("builder:upload_project"))
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/#workspace", response["Location"])
+        self.assertIn("/workspace/", response["Location"])
 
     def test_generate_project_offline_opens_safe_edit(self):
         self.client.force_login(self.user)
@@ -1136,3 +1204,743 @@ class AIWebsiteBuilderTests(TestCase):
         self.assertIn("contact.html", files)
         self.assertIn("styles.css", files)
         self.assertIn('id="features"', files["index.html"])
+
+    def test_ai_generate_starts_build_with_short_description(self):
+        from builder.models import AIWebsiteBrief
+        from builder.services.ai_prefetch import brief_can_prefetch
+
+        self.client.force_login(self.user)
+        brief = AIWebsiteBrief.objects.create(
+            owner=self.user,
+            business_name="lare",
+            industry="Health and wellness",
+            description="we sell and distribute gym tools",
+            primary_goal="book",
+            primary_cta={"goals": ["book", "leads", "credibility"]},
+            status="ready",
+        )
+        self.assertTrue(brief_can_prefetch(brief))
+
+        response = self.client.post(
+            reverse("builder:ai_generate", args=[brief.id]),
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertIn(response.status_code, {200, 202})
+        payload = response.json()
+        self.assertFalse(payload.get("failed"))
+        if response.status_code == 202:
+            self.assertTrue(payload.get("building"))
+        else:
+            self.assertTrue(payload.get("redirectUrl") or payload.get("ready"))
+
+    def test_assembled_build_prompt_can_exceed_user_brief_limit(self):
+        from django.core.exceptions import ValidationError
+
+        from builder.services.ai_builder import MAX_PROMPT_CHARS, _clean_prompt
+        from builder.services.sitewright_prompt import sitewright_quality_rules
+
+        assembled = (
+            f"{sitewright_quality_rules(multipage=True)}\n\n"
+            "WEBSITE GOALS (prioritize in this order, max three)\n"
+            "- 1. PRIORITY (user-defined): Get parents to enroll this term\n"
+            "STRUCTURED SPEC (for reference)\n"
+            + ("x" * 5000)
+        )
+        self.assertGreater(len(assembled), MAX_PROMPT_CHARS)
+        cleaned = _clean_prompt(assembled)
+        self.assertIn("Siaw Sitewright", cleaned)
+        self.assertIn("\n", cleaned)
+
+        with self.assertRaises(ValidationError) as ctx:
+            _clean_prompt("short user paste " + ("y" * 4100))
+        self.assertIn("Keep the brief under 4000 characters.", str(ctx.exception))
+
+    def test_custom_other_goal_is_priority_in_prompt(self):
+        from builder.models import AIWebsiteBrief
+        from builder.services.ai_website import brief_goals, brief_to_generation_prompt, display_goal
+
+        self.client.force_login(self.user)
+        brief = AIWebsiteBrief.objects.create(
+            owner=self.user,
+            business_name="class statr",
+            industry="Education and coaching",
+            description="After-school coding classes for kids who want a stronger start.",
+            location="berlin",
+            primary_goal="other",
+            primary_cta={
+                "goals": ["educate", "book", "other"],
+                "other": "Get parents to enroll this term",
+            },
+        )
+        self.assertEqual(brief_goals(brief)[0], "other")
+        self.assertEqual(display_goal("other", brief), "Get parents to enroll this term")
+        prompt = brief_to_generation_prompt(brief)
+        self.assertIn("PRIORITY (user-defined): Get parents to enroll this term", prompt)
+        self.assertLess(
+            prompt.index("PRIORITY (user-defined)"),
+            prompt.index("Explain the offer"),
+        )
+
+    def test_question_tailor_varies_goals_step_from_idea(self):
+        from builder.services.question_tailor import tailor_goals_question
+
+        restaurant = tailor_goals_question(
+            business_name="Harbor Table",
+            industry="Restaurants and hospitality",
+            description="A warm Accra restaurant for couples booking weekend dinners and tasting menus.",
+            location="Accra, Ghana",
+            language="English",
+        )
+        saas = tailor_goals_question(
+            business_name="Slow Lion",
+            industry="Technology and SaaS",
+            description="B2B software with a free trial for ops teams who need clearer workflows.",
+            location="Worldwide",
+            language="English",
+        )
+        self.assertIn("Harbor Table", restaurant["headline"])
+        self.assertIn("Accra", restaurant["lead"])
+        self.assertEqual(restaurant["goals"][0]["value"], "reserve")
+        self.assertIn("table", restaurant["goals"][0]["desc"].lower())
+
+        self.assertIn("Slow Lion", saas["headline"])
+        self.assertNotEqual(restaurant["headline"], saas["headline"])
+        self.assertEqual(saas["goals"][0]["value"], "trial")
+        self.assertIn("trial", saas["lead"].lower())
+        self.assertNotIn("—", restaurant["headline"] + restaurant["lead"])
+
+        again = tailor_goals_question(
+            business_name="Harbor Table",
+            industry="Restaurants and hospitality",
+            description="A warm Accra restaurant for couples booking weekend dinners and tasting menus.",
+            location="Accra, Ghana",
+            language="English",
+        )
+        self.assertEqual(restaurant, again)
+
+    def test_sitewright_quality_rules_in_build_prompts(self):
+        from builder.services.ai_builder import _codex_build_prompt, build_brief
+        from builder.services.sitewright_prompt import sitewright_quality_rules
+
+        single = sitewright_quality_rules(multipage=False)
+        multi = sitewright_quality_rules(multipage=True)
+        self.assertIn("Siaw Sitewright", single)
+        self.assertIn("No em dashes", single)
+        self.assertIn('href="#features"', single)
+        self.assertIn("separate .html files", multi)
+        self.assertNotIn("ONE complete homepage", multi)
+        self.assertNotIn("—", single)
+        self.assertNotIn("—", multi)
+
+        brief = build_brief("Cafe website for Harbor Roast", project_name="Harbor")
+        prompt = _codex_build_prompt("Build Harbor Roast", brief, "Harbor")
+        self.assertIn("Siaw Sitewright", prompt)
+        self.assertIn("EDITOR COMPATIBILITY", prompt)
+
+    def test_ollama_is_disabled_and_codex_is_preferred(self):
+        from builder.services import ai_builder
+        from pathlib import Path
+
+        fake_bin = Path(self.temp_dir.name) / "codex"
+        fake_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+        fake_bin.chmod(0o755)
+
+        self.assertFalse(ai_builder._ollama_reachable())
+        self.assertEqual(ai_builder._ollama_list_models(), [])
+
+        with override_settings(
+            SIAW_AI_FORCE_OFFLINE=False,
+            SIAW_AI_PROVIDER="ollama",
+            SIAW_CODEX_DISABLE=False,
+            SIAW_CODEX_BIN=str(fake_bin),
+            SIAW_AI_API_KEY="",
+            OPENAI_API_KEY="",
+        ):
+            self.assertEqual(ai_builder._resolve_provider(), "codex")
+            status = ai_builder.ai_status()
+            self.assertEqual(status["provider"], "codex")
+            self.assertTrue(status["configured"])
+
+        with override_settings(
+            SIAW_AI_FORCE_OFFLINE=False,
+            SIAW_AI_PROVIDER="ollama",
+            SIAW_CODEX_DISABLE=True,
+            SIAW_CODEX_BIN=str(fake_bin),
+            SIAW_AI_API_KEY="",
+            OPENAI_API_KEY="",
+        ):
+            # Without Codex or OpenAI, fall back to offline. Never Ollama.
+            self.assertEqual(ai_builder._resolve_provider(), "offline")
+            self.assertEqual(ai_builder._resolve_chat_provider(), "offline")
+
+        with override_settings(
+            SIAW_AI_FORCE_OFFLINE=False,
+            SIAW_AI_PROVIDER="auto",
+            SIAW_CODEX_DISABLE=False,
+            SIAW_CODEX_BIN=str(fake_bin),
+            SIAW_CODEX_MODEL="gpt-5.6-sol",
+            SIAW_AI_API_KEY="",
+            OPENAI_API_KEY="",
+        ):
+            self.assertEqual(ai_builder._resolve_chat_provider(), "codex")
+            chat = ai_builder._ai_settings(chat=True)
+            self.assertEqual(chat["provider"], "codex")
+            self.assertEqual(chat["model"], "gpt-5.6-sol")
+
+    def test_create_website_from_prompt_uses_codex_path(self):
+        from builder.services import ai_builder
+        from pathlib import Path
+        from unittest.mock import patch
+
+        project_dir = Path(self.temp_dir.name) / "codex-project"
+        project_dir.mkdir()
+
+        def fake_codex(project_dir, *, prompt, project_name="", brief=None, seed_files=None):
+            source = project_dir / "source"
+            source.mkdir(parents=True, exist_ok=True)
+            (source / "index.html").write_text(
+                "<!DOCTYPE html><html><body><h1>Codex Site</h1>"
+                '<section id="features"></section><section id="story"></section>'
+                '<section id="proof"></section><section id="contact"></section>'
+                "</body></html>",
+                encoding="utf-8",
+            )
+            return ai_builder._finalize_codex_source(
+                project_dir,
+                brief=brief or ai_builder.build_brief(prompt, project_name=project_name),
+            )
+
+        with override_settings(
+            SIAW_AI_FORCE_OFFLINE=False,
+            SIAW_AI_PROVIDER="codex",
+            SIAW_CODEX_DISABLE=False,
+            SIAW_CODEX_BIN=str(Path(self.temp_dir.name) / "missing-codex"),
+        ):
+            with patch.object(ai_builder, "_codex_available", return_value=True):
+                with patch.object(ai_builder, "create_website_with_codex", side_effect=fake_codex):
+                    result = ai_builder.create_website_from_prompt(
+                        project_dir,
+                        prompt="Build a cafe website called Harbor",
+                        project_name="Harbor",
+                    )
+        self.assertEqual(result.provider, "codex")
+        self.assertEqual(result.entry_file, "index.html")
+        self.assertIn("Codex Site", (project_dir / "source" / "index.html").read_text(encoding="utf-8"))
+
+
+class MultiUserTenancyAndPlansTests(TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.override = override_settings(
+            MEDIA_ROOT=self.temp_dir.name,
+            SIAW_AI_FORCE_OFFLINE=True,
+            SIAW_AI_PROVIDER="offline",
+            SIAW_AI_API_KEY="",
+            OPENAI_API_KEY="",
+        )
+        self.override.enable()
+        self.owner = _make_user("owner-a")
+        self.intruder = _make_user("intruder-b")
+        self.project = WebsiteProject.objects.create(
+            name="Owner Site",
+            entry_file="index.html",
+            owner=self.owner,
+        )
+        self.project.source_dir.mkdir(parents=True)
+        self.project.entry_path.write_text(
+            "<!doctype html><html><body><h1>Private</h1></body></html>",
+            encoding="utf-8",
+        )
+
+    def tearDown(self):
+        self.override.disable()
+        self.temp_dir.cleanup()
+
+    def test_intruder_cannot_open_owner_project_routes(self):
+        self.client.force_login(self.intruder)
+        for name in ("editor", "preview", "editor_data", "export_project"):
+            response = self.client.get(reverse(f"builder:{name}", args=[self.project.id]))
+            self.assertEqual(response.status_code, 404, name)
+        runtime = self.client.get(reverse("builder:runtime_site", args=[self.project.id]))
+        self.assertEqual(runtime.status_code, 404)
+        files = self.client.get(
+            reverse("builder:project_file", kwargs={"project_id": self.project.id, "file_path": "index.html"})
+        )
+        self.assertEqual(files.status_code, 404)
+
+    def test_anonymous_cannot_preview_or_runtime(self):
+        preview = self.client.get(reverse("builder:preview", args=[self.project.id]))
+        self.assertEqual(preview.status_code, 302)
+        runtime = self.client.get(reverse("builder:runtime_site", args=[self.project.id]))
+        self.assertEqual(runtime.status_code, 404)
+        host = f"{self.project.id}.runtime.localhost:8000"
+        isolated = self.client.get("/", HTTP_HOST=host)
+        self.assertEqual(isolated.status_code, 404)
+
+    def test_anonymous_runtime_assets_work_without_access_cookie(self):
+        """Preview iframes are cross-site; CSS must load even when the access cookie is blocked."""
+        (self.project.source_dir / "styles.css").write_text("body{color:#111}", encoding="utf-8")
+        (self.project.source_dir / "script.js").write_text("console.log('ok')", encoding="utf-8")
+        host = f"{self.project.id}.runtime.localhost:8000"
+        css = self.client.get("/styles.css", HTTP_HOST=host)
+        self.assertEqual(css.status_code, 200)
+        self.assertIn(b"color:#111", b"".join(css.streaming_content))
+        js = self.client.get("/script.js", HTTP_HOST=host)
+        self.assertEqual(js.status_code, 200)
+        html = self.client.get("/", HTTP_HOST=host)
+        self.assertEqual(html.status_code, 404)
+
+    def test_owner_runtime_and_preview_still_work(self):
+        self.client.force_login(self.owner)
+        preview = self.client.get(reverse("builder:preview", args=[self.project.id]))
+        self.assertEqual(preview.status_code, 200)
+        self.assertContains(preview, "access=")
+        runtime = self.client.get(reverse("builder:runtime_site", args=[self.project.id]))
+        self.assertEqual(runtime.status_code, 200)
+        host = f"{self.project.id}.runtime.localhost:8000"
+        isolated = self.client.get("/", HTTP_HOST=host)
+        self.assertEqual(isolated.status_code, 200)
+
+    def test_soft_delete_hides_project_and_undelete_restores(self):
+        self.client.force_login(self.owner)
+        deleted = self.client.post(reverse("builder:delete_project", args=[self.project.id]))
+        self.assertEqual(deleted.status_code, 302)
+        self.project.refresh_from_db()
+        self.assertIsNotNone(self.project.deleted_at)
+        editor = self.client.get(reverse("builder:editor", args=[self.project.id]))
+        self.assertEqual(editor.status_code, 404)
+        account = self.client.get(reverse("builder:account"))
+        self.assertEqual(account.status_code, 200)
+        self.assertContains(account, "Owner Site")
+        restored = self.client.post(reverse("builder:undelete_project", args=[self.project.id]))
+        self.assertEqual(restored.status_code, 302)
+        self.project.refresh_from_db()
+        self.assertIsNone(self.project.deleted_at)
+
+    def test_free_plan_blocks_third_project_and_fourth_ai_generation(self):
+        from builder.services.plans import ensure_profile, record_ai_generation
+
+        self.client.force_login(self.owner)
+        profile = ensure_profile(self.owner)
+        self.assertEqual(profile.plan, "free")
+        WebsiteProject.objects.create(name="Second", entry_file="index.html", owner=self.owner)
+        blocked = self.client.post(
+            reverse("builder:generate_project"),
+            data={
+                "name": "Third",
+                "prompt": "Luxury fragrance boutique in Accra called Alvora with warm cream tones.",
+            },
+        )
+        self.assertEqual(blocked.status_code, 400)
+        self.assertContains(blocked, "allows 2 active projects", status_code=400)
+
+        from django.utils import timezone as dj_timezone
+
+        WebsiteProject.objects.filter(owner=self.owner).exclude(id=self.project.id).update(
+            deleted_at=dj_timezone.now()
+        )
+        for _ in range(3):
+            record_ai_generation(self.owner)
+        ai_blocked = self.client.post(
+            reverse("builder:generate_project"),
+            data={
+                "name": "AI Over Limit",
+                "prompt": "Luxury fragrance boutique in Accra called Alvora with warm cream tones.",
+            },
+        )
+        self.assertEqual(ai_blocked.status_code, 400)
+        self.assertContains(ai_blocked, "AI generations this month", status_code=400)
+
+    def test_account_can_change_plan_and_password(self):
+        self.client.force_login(self.owner)
+        plan = self.client.post(
+            reverse("builder:account"),
+            data={"action": "plan", "plan": "pro"},
+        )
+        self.assertEqual(plan.status_code, 302)
+        from builder.services.plans import ensure_profile
+
+        self.assertEqual(ensure_profile(self.owner).plan, "pro")
+        password = self.client.post(
+            reverse("builder:account"),
+            data={
+                "action": "password",
+                "old_password": "siaw-test-pass-99",
+                "new_password1": "siaw-new-pass-22",
+                "new_password2": "siaw-new-pass-22",
+            },
+        )
+        self.assertEqual(password.status_code, 302)
+        self.owner.refresh_from_db()
+        self.assertTrue(self.owner.check_password("siaw-new-pass-22"))
+
+    def test_pro_plan_unlocks_project_limit(self):
+        from builder.services.plans import ensure_profile
+
+        self.client.force_login(self.owner)
+        WebsiteProject.objects.create(name="Second", entry_file="index.html", owner=self.owner)
+        blocked = self.client.post(
+            reverse("builder:generate_project"),
+            data={
+                "name": "Third",
+                "prompt": "Luxury fragrance boutique in Accra called Alvora with warm cream tones.",
+            },
+        )
+        self.assertEqual(blocked.status_code, 400)
+        profile = ensure_profile(self.owner)
+        profile.plan = "pro"
+        profile.save(update_fields=["plan", "updated_at"])
+        allowed = self.client.post(
+            reverse("builder:generate_project"),
+            data={
+                "name": "Third",
+                "prompt": "Luxury fragrance boutique in Accra called Alvora with warm cream tones.",
+            },
+        )
+        self.assertEqual(allowed.status_code, 302)
+        self.assertTrue(WebsiteProject.objects.filter(owner=self.owner, name="Third", deleted_at__isnull=True).exists())
+        workspace = self.client.get(reverse("builder:workspace"))
+        self.assertEqual(workspace.status_code, 200)
+        self.assertContains(workspace, "Pro")
+
+
+class ShopifyConnectTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="shop-owner", password="siaw-test-pass-99")
+        self.client.force_login(self.user)
+
+    def test_normalize_and_token_roundtrip(self):
+        from builder.services.shopify.oauth import normalize_shop_domain
+        from builder.services.shopify.tokens import decrypt_token, encrypt_token
+
+        self.assertEqual(normalize_shop_domain("Cool-Store"), "cool-store.myshopify.com")
+        self.assertEqual(
+            normalize_shop_domain("https://Cool-Store.myshopify.com/admin"),
+            "cool-store.myshopify.com",
+        )
+        with self.assertRaises(ValueError):
+            normalize_shop_domain("not a shop!!!")
+        token = "shpat_test_access_token_value"
+        self.assertEqual(decrypt_token(encrypt_token(token)), token)
+
+    def test_oauth_hmac_and_connect_redirect(self):
+        import hashlib
+        import hmac
+
+        from django.test import override_settings
+
+        from builder.services.shopify.oauth import verify_oauth_hmac
+
+        secret = "shopify-test-secret"
+        params = {
+            "code": "abc",
+            "shop": "demo-store.myshopify.com",
+            "state": "xyz",
+            "timestamp": "1710000000",
+        }
+        message = "&".join(f"{k}={params[k]}" for k in sorted(params))
+        params["hmac"] = hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
+        with override_settings(SHOPIFY_API_SECRET=secret):
+            self.assertTrue(verify_oauth_hmac(params))
+            bad = dict(params)
+            bad["hmac"] = "0" * 64
+            self.assertFalse(verify_oauth_hmac(bad))
+
+        with override_settings(SHOPIFY_API_KEY="key123", SHOPIFY_API_SECRET=secret):
+            account = self.client.get(reverse("builder:account"))
+            self.assertEqual(account.status_code, 200)
+            self.assertContains(account, "Connect Shopify store")
+            workspace = self.client.get(reverse("builder:workspace"))
+            self.assertContains(workspace, "Build from Shopify")
+            start = self.client.post(
+                reverse("builder:shopify_connect"),
+                data={"shop": "demo-store.myshopify.com"},
+            )
+            self.assertEqual(start.status_code, 302)
+            self.assertIn("demo-store.myshopify.com/admin/oauth/authorize", start["Location"])
+            self.assertIn("client_id=key123", start["Location"])
+
+    def test_callback_stores_shop_and_build_seeds_brief(self):
+        import hashlib
+        import hmac
+        from unittest.mock import patch
+
+        from django.test import override_settings
+
+        from builder.models import AIWebsiteBrief, ShopifyShop
+        from builder.services.shopify.oauth import make_oauth_state
+        from builder.services.shopify.tokens import decrypt_token
+
+        secret = "shopify-test-secret"
+        state = make_oauth_state(user_id=self.user.id, next_url="/account/#shopify")
+        params = {
+            "code": "auth-code-1",
+            "shop": "demo-store.myshopify.com",
+            "state": state,
+            "timestamp": "1710000000",
+        }
+        message = "&".join(f"{k}={params[k]}" for k in sorted(params))
+        params["hmac"] = hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
+
+        with override_settings(SHOPIFY_API_KEY="key123", SHOPIFY_API_SECRET=secret):
+            with patch(
+                "builder.views_shopify.exchange_code_for_token",
+                return_value={"access_token": "shpat_live_token", "scope": "read_products"},
+            ), patch(
+                "builder.services.shopify.install.refresh_shop_profile",
+                side_effect=lambda shop: shop,
+            ):
+                callback = self.client.get(reverse("builder:shopify_callback"), data=params)
+            self.assertEqual(callback.status_code, 302)
+            shop = ShopifyShop.objects.get(owner=self.user, shop_domain="demo-store.myshopify.com")
+            self.assertTrue(shop.is_active)
+            self.assertEqual(decrypt_token(shop.access_token_encrypted), "shpat_live_token")
+
+            with patch(
+                "builder.services.shopify.catalog.catalog_snapshot",
+                return_value={
+                    "shop": {
+                        "domain": shop.shop_domain,
+                        "name": "Demo Store",
+                        "email": "owner@example.com",
+                        "primary_domain": "demo.example",
+                        "currency": "USD",
+                        "plan_name": "Basic",
+                        "description": "Handmade goods",
+                    },
+                    "products": [
+                        {
+                            "title": "Canvas Tote",
+                            "handle": "canvas-tote",
+                            "status": "ACTIVE",
+                            "description": "Sturdy tote",
+                            "price_amount": "28.00",
+                            "price_currency": "USD",
+                            "image_url": "",
+                            "online_store_url": "https://demo.example/products/canvas-tote",
+                        }
+                    ],
+                    "product_count": 1,
+                },
+            ):
+                build = self.client.post(reverse("builder:shopify_build_site", args=[shop.id]))
+            self.assertEqual(build.status_code, 302)
+            brief = AIWebsiteBrief.objects.get(owner=self.user, starting_point="shopify")
+            self.assertEqual(brief.business_name, "Demo Store")
+            self.assertEqual(brief.industry, "Ecommerce and retail")
+            self.assertEqual(brief.services_json[0]["name"], "Canvas Tote")
+            self.assertIn(str(brief.id), build["Location"])
+
+    def test_webhook_uninstall_deactivates_shop(self):
+        import base64
+        import hashlib
+        import hmac
+
+        from django.test import override_settings
+
+        from builder.models import ShopifyShop
+        from builder.services.shopify.tokens import encrypt_token
+
+        secret = "shopify-test-secret"
+        shop = ShopifyShop.objects.create(
+            owner=self.user,
+            shop_domain="demo-store.myshopify.com",
+            access_token_encrypted=encrypt_token("shpat_x"),
+            is_active=True,
+        )
+        body = b'{"id":1}'
+        digest = base64.b64encode(hmac.new(secret.encode(), body, hashlib.sha256).digest()).decode()
+        with override_settings(SHOPIFY_API_SECRET=secret):
+            response = self.client.post(
+                reverse("builder:shopify_webhook"),
+                data=body,
+                content_type="application/json",
+                headers={
+                    "X-Shopify-Hmac-Sha256": digest,
+                    "X-Shopify-Topic": "app/uninstalled",
+                    "X-Shopify-Shop-Domain": "demo-store.myshopify.com",
+                },
+            )
+        self.assertEqual(response.status_code, 200)
+        shop.refresh_from_db()
+        self.assertFalse(shop.is_active)
+        self.assertEqual(shop.access_token_encrypted, "")
+
+    def _session_jwt(self, *, secret: str, api_key: str, shop: str = "demo-store.myshopify.com"):
+        import base64
+        import hashlib
+        import hmac
+        import json
+        import time
+
+        def b64(data: bytes) -> str:
+            return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+        header = b64(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+        now = int(time.time())
+        payload = b64(
+            json.dumps(
+                {
+                    "iss": f"https://{shop}/admin",
+                    "dest": f"https://{shop}",
+                    "aud": api_key,
+                    "sub": "1",
+                    "exp": now + 60,
+                    "nbf": now - 5,
+                    "iat": now,
+                    "jti": "test-jti",
+                    "sid": "test-sid",
+                }
+            ).encode()
+        )
+        signing_input = f"{header}.{payload}".encode()
+        sig = b64(hmac.new(secret.encode(), signing_input, hashlib.sha256).digest())
+        return f"{header}.{payload}.{sig}"
+
+    def test_merchant_app_home_and_install_callback(self):
+        import hashlib
+        import hmac
+        from unittest.mock import patch
+
+        from django.test import override_settings
+
+        from builder.models import ShopifyShop
+        from builder.services.shopify.oauth import make_oauth_state
+        from builder.services.shopify.tokens import decrypt_token
+
+        secret = "shopify-test-secret"
+        api_key = "key123"
+        with override_settings(SHOPIFY_API_KEY=api_key, SHOPIFY_API_SECRET=secret):
+            home = self.client.get(reverse("builder:shopify_app"))
+            self.assertEqual(home.status_code, 200)
+            self.assertContains(home, "Siaw for Shopify")
+            self.assertContains(home, "cdn.shopify.com/shopifycloud/app-bridge.js")
+            self.assertIn(
+                "frame-ancestors https://admin.shopify.com",
+                home.get("Content-Security-Policy", ""),
+            )
+            self.assertNotIn("X-Frame-Options", home)
+
+            # Uninstalled shop + valid Admin HMAC should start OAuth install.
+            params = {
+                "shop": "merchant-store.myshopify.com",
+                "host": "YWRtaW4uc2hvcGlmeS5jb20vc3RvcmUvbWVyY2hhbnQ",
+                "timestamp": "1710000000",
+            }
+            message = "&".join(f"{k}={params[k]}" for k in sorted(params))
+            params["hmac"] = hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
+            install = self.client.get(reverse("builder:shopify_app"), data=params)
+            self.assertEqual(install.status_code, 302)
+            self.assertIn("merchant-store.myshopify.com/admin/oauth/authorize", install["Location"])
+
+            state = make_oauth_state(mode="install", shop="merchant-store.myshopify.com")
+            callback_params = {
+                "code": "install-code",
+                "shop": "merchant-store.myshopify.com",
+                "state": state,
+                "timestamp": "1710000000",
+            }
+            msg2 = "&".join(f"{k}={callback_params[k]}" for k in sorted(callback_params))
+            callback_params["hmac"] = hmac.new(secret.encode(), msg2.encode(), hashlib.sha256).hexdigest()
+            with patch(
+                "builder.views_shopify.exchange_code_for_token",
+                return_value={"access_token": "shpat_merchant", "scope": "read_products"},
+            ), patch(
+                "builder.services.shopify.install.refresh_shop_profile",
+                side_effect=lambda shop: shop,
+            ):
+                # Merchant install should work without a logged-in Siaw user.
+                self.client.logout()
+                callback = self.client.get(reverse("builder:shopify_callback"), data=callback_params)
+            self.assertEqual(callback.status_code, 302)
+            self.assertIn("/shopify/app/", callback["Location"])
+            shop = ShopifyShop.objects.get(shop_domain="merchant-store.myshopify.com")
+            self.assertTrue(shop.is_active)
+            self.assertIsNone(shop.owner_id)
+            self.assertEqual(decrypt_token(shop.access_token_encrypted), "shpat_merchant")
+
+    def test_session_token_exchange_and_app_build(self):
+        from unittest.mock import patch
+
+        from django.test import override_settings
+
+        from builder.models import AIWebsiteBrief, ShopifyShop
+
+        secret = "shopify-test-secret"
+        api_key = "key123"
+        jwt = self._session_jwt(secret=secret, api_key=api_key, shop="session-store.myshopify.com")
+        with override_settings(SHOPIFY_API_KEY=api_key, SHOPIFY_API_SECRET=secret):
+            with patch(
+                "builder.views_shopify.exchange_session_token",
+                return_value={"access_token": "shpat_session", "scope": "read_products"},
+            ), patch(
+                "builder.services.shopify.install.refresh_shop_profile",
+                side_effect=lambda shop: shop,
+            ):
+                session = self.client.post(
+                    reverse("builder:shopify_session"),
+                    data=b"{}",
+                    content_type="application/json",
+                    headers={"Authorization": f"Bearer {jwt}"},
+                )
+            self.assertEqual(session.status_code, 200)
+            payload = session.json()
+            self.assertTrue(payload["ok"])
+            shop = ShopifyShop.objects.get(shop_domain="session-store.myshopify.com")
+            self.assertTrue(shop.is_active)
+
+            with patch(
+                "builder.services.shopify.catalog.catalog_snapshot",
+                return_value={
+                    "shop": {
+                        "domain": shop.shop_domain,
+                        "name": "Session Store",
+                        "email": "merchant@example.com",
+                        "primary_domain": "session.example",
+                        "currency": "USD",
+                        "plan_name": "Basic",
+                        "description": "Session goods",
+                    },
+                    "products": [
+                        {
+                            "title": "Mug",
+                            "handle": "mug",
+                            "status": "ACTIVE",
+                            "description": "Ceramic mug",
+                            "price_amount": "12.00",
+                            "price_currency": "USD",
+                            "image_url": "",
+                            "online_store_url": "https://session.example/products/mug",
+                        }
+                    ],
+                    "product_count": 1,
+                },
+            ):
+                build = self.client.post(
+                    reverse("builder:shopify_app_build"),
+                    data=b"{}",
+                    content_type="application/json",
+                    headers={"Authorization": f"Bearer {jwt}"},
+                )
+            self.assertEqual(build.status_code, 200)
+            body = build.json()
+            self.assertTrue(body["ok"])
+            self.assertIn("/shopify/continue/", body["wizard_url"])
+            brief = AIWebsiteBrief.objects.get(id=body["brief_id"])
+            self.assertEqual(brief.starting_point, "shopify")
+            self.assertEqual(brief.business_name, "Session Store")
+            shop.refresh_from_db()
+            self.assertIsNotNone(shop.owner_id)
+
+            # Handoff logs in the shop user and opens the wizard (fixes ownership 404).
+            continue_path = body["wizard_url"].split(".app", 1)[-1]
+            if not continue_path.startswith("/"):
+                from urllib.parse import urlparse
+
+                continue_path = urlparse(body["wizard_url"]).path + "?" + urlparse(body["wizard_url"]).query
+            opened = self.client.get(continue_path)
+            self.assertEqual(opened.status_code, 302)
+            self.assertIn(str(brief.id), opened["Location"])
+            wizard = self.client.get(opened["Location"])
+            self.assertEqual(wizard.status_code, 200)
+            self.assertContains(wizard, "Session Store")

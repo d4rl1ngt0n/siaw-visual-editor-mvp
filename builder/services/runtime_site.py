@@ -164,6 +164,9 @@ def build_entry_html_response(
     html_text = entry.read_text(encoding="utf-8", errors="replace")
     if rewrite_absolute_assets:
         html_text = rewrite_root_absolute_assets(html_text)
+    from .editor_assets import recover_shopify_media_urls
+
+    html_text = recover_shopify_media_urls(html_text)
     html_text = _inject_runtime_bridge(html_text, project)
     content_type, _ = mimetypes.guess_type(entry.name)
     response = HttpResponse(html_text, content_type=content_type or "text/html")
@@ -266,6 +269,9 @@ def serve_runtime_request(
             html_text = target.read_text(encoding="utf-8", errors="replace")
             if rewrite_absolute_assets:
                 html_text = rewrite_root_absolute_assets(html_text)
+            from .editor_assets import recover_shopify_media_urls
+
+            html_text = recover_shopify_media_urls(html_text)
             # Only inject bridge on the main entry to avoid double-injection on other pages.
             if target.resolve() == (project.source_dir / project.entry_file).resolve():
                 html_text = _inject_runtime_bridge(html_text, project)

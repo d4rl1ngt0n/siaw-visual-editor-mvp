@@ -1,0 +1,163 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Build with AI · Siaw</title>
+  <link rel="stylesheet" href="{% static 'builder/ai_workspace.css' %}?v=brief-11">
+</head>
+<body data-step="{{ wizard_step }}">
+  <header class="ai-topbar">
+    <a href="{% url 'builder:workspace' %}" class="brand"><span>S</span><strong>Siaw</strong></a>
+    <div class="save-state" id="saveState" role="status">All changes saved</div>
+    <a class="exit-link" href="{% url 'builder:workspace' %}">Save & exit</a>
+  </header>
+  <div class="progress"><span id="progressBar"></span></div>
+
+  <main
+    class="wizard-shell"
+    id="wizard"
+    data-save-url="{% url 'builder:ai_autosave' brief.id %}"
+    data-review-url="{% url 'builder:ai_review' brief.id %}"
+    data-upload-url="{% url 'builder:ai_upload_asset' brief.id %}"
+    data-asset-url-template="{% url 'builder:ai_asset_detail' brief.id 0 %}"
+    data-fresh-url="{% url 'builder:ai_builder' %}?new=1"
+  >
+    <aside class="wizard-nav">
+      <p>Creative brief</p>
+      <ol>
+        <li data-nav-step="1"><span>1</span><b>Idea</b></li>
+        <li data-nav-step="2"><span>2</span><b>Goals</b></li>
+      </ol>
+    </aside>
+
+    <form id="briefForm" novalidate>
+      {% csrf_token %}
+
+      <section class="wizard-step" data-step-panel="1">
+        <div class="step-intro">
+          <p class="kicker">Step 1 of 2</p>
+          <h1>Tell us about your idea.</h1>
+          <p>A few real details help us make the website specific and credible.</p>
+        </div>
+        <div class="form-grid">
+          <label>
+            Business or project name <span>Required</span>
+            <input data-field="business_name" maxlength="160" value="{{ brief.business_name }}" placeholder="e.g. Harbor Table" required>
+          </label>
+          <label>
+            Industry <span>Required</span>
+            <select data-field="industry" id="industrySelect" required>
+              <option value="">Select an industry</option>
+              <option value="Restaurants and hospitality">Restaurants and hospitality</option>
+              <option value="Health and wellness">Health and wellness</option>
+              <option value="Fitness and sports">Fitness and sports</option>
+              <option value="Beauty and personal care">Beauty and personal care</option>
+              <option value="Professional services">Professional services</option>
+              <option value="Legal and accounting">Legal and accounting</option>
+              <option value="Finance and insurance">Finance and insurance</option>
+              <option value="Real estate">Real estate</option>
+              <option value="Construction and trades">Construction and trades</option>
+              <option value="Ecommerce and retail">Ecommerce and retail</option>
+              <option value="Fashion and lifestyle">Fashion and lifestyle</option>
+              <option value="Technology and SaaS">Technology and SaaS</option>
+              <option value="Creative agencies and studios">Creative agencies and studios</option>
+              <option value="Education and coaching">Education and coaching</option>
+              <option value="Nonprofit and community">Nonprofit and community</option>
+              <option value="Events and entertainment">Events and entertainment</option>
+              <option value="Travel and tourism">Travel and tourism</option>
+              <option value="Automotive and mobility">Automotive and mobility</option>
+              <option value="Home services">Home services</option>
+              <option value="Other">Other</option>
+            </select>
+          </label>
+          <label class="wide">
+            What is the idea? <span>Required</span>
+            <textarea data-field="description" placeholder="Describe the offer, who it helps, and the outcome people get." required>{{ brief.description }}</textarea>
+            <small>Write naturally. Two or three sentences are enough.</small>
+          </label>
+          <label>
+            Location or service area <em>Optional</em>
+            <input data-field="location" value="{{ brief.location }}" placeholder="Accra, Ghana or Worldwide">
+          </label>
+          <label>
+            Website language
+            <select data-field="language">
+              <option value="English">English</option>
+              <option value="German">German</option>
+              <option value="French">French</option>
+              <option value="Spanish">Spanish</option>
+              <option value="Multiple languages">Multiple languages</option>
+            </select>
+          </label>
+          <div class="wide asset-upload-panel">
+            <div class="asset-upload-toolbar">
+              <label class="asset-type-label">
+                Upload as
+                <select id="assetTypeSelect">
+                  <option value="logo" selected>Logo</option>
+                  <option value="image">Photo / image</option>
+                  <option value="document">Document</option>
+                </select>
+              </label>
+              <label class="upload-zone">
+                Upload logo, photos or a brochure
+                <input id="assetInput" type="file" accept=".png,.jpg,.jpeg,.webp,.svg,.gif,.pdf" multiple>
+                <span>Drop files here or choose files · up to 10 MB each</span>
+                <small id="assetStatus">PNG, JPG, WebP, SVG or PDF. Mark one file as Logo so it brands the site.</small>
+              </label>
+            </div>
+            <div class="asset-gallery" id="assetGallery" aria-live="polite"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="wizard-step" data-step-panel="2">
+        <div class="step-intro">
+          <p class="kicker">Step 2 of 2</p>
+          <h1 id="goalsHeadline">{{ goals_question.headline|default:"What should the website achieve?" }}</h1>
+          <p id="goalsLead">{{ goals_question.lead|default:"Pick up to three outcomes. These options follow the industry you chose." }}</p>
+        </div>
+        <p class="goal-industry" id="goalIndustryLabel" hidden></p>
+        <p class="goal-hint" id="goalHint" hidden>Select an industry on the Idea step first to see tailored goals.</p>
+        <p class="goal-count" id="goalCount" aria-live="polite">0 of 3 selected</p>
+        <div class="choice-grid goals" id="goalGrid" data-multi-choice="goals"></div>
+        <div class="goal-other-panel" id="goalOtherPanel" hidden>
+          <label>
+            Your outcome <span>Priority</span>
+            <input
+              id="goalOtherInput"
+              type="text"
+              maxlength="160"
+              placeholder="e.g. Get parents to enroll this term"
+              autocomplete="off"
+            >
+            <small>This becomes the top priority for the generated site.</small>
+          </label>
+        </div>
+      </section>
+
+      <div class="validation" id="validation" role="alert"></div>
+      <footer class="wizard-actions">
+        <button type="button" class="secondary" id="backBtn">← Back</button>
+        <button type="button" class="primary" id="nextBtn">Continue →</button>
+      </footer>
+    </form>
+  </main>
+
+  {{ brief.primary_cta|json_script:"initial-primary-cta" }}
+  {{ brief.redesign_json|json_script:"initial-redesign" }}
+  {{ brief_assets|json_script:"initial-assets" }}
+  {{ goals_question|json_script:"initial-goals-question" }}
+  <script>
+    window.SIAW_BRIEF = {
+      starting_point: "new",
+      industry: "{{ brief.industry|escapejs }}",
+      language: "{{ brief.language|escapejs }}",
+      primary_goal: "{{ brief.primary_goal|escapejs }}"
+    };
+  </script>
+  <script src="{% static 'builder/ai_workspace.js' %}?v=brief-13"></script>
+</body>
+</html>

@@ -1,15 +1,20 @@
 """AI website builder: prompt → self-contained HTML project for Safe Edit.
 
 Generates static, GrapesJS-friendly sites (semantic HTML + CSS, no app shell JS).
-Uses an OpenAI-compatible chat API when configured; otherwise a high-quality
-offline generator so local demos still work.
+Prefers the Codex CLI for full site builds when available.
+Falls back to OpenAI chat APIs or the offline design engine.
+Ollama is disabled (local model loads can freeze the host machine).
 """
 
 from __future__ import annotations
 
 import html
 import json
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 import zipfile
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -20,8 +25,12 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 
 from .archive import StylesheetParser
+from .sitewright_prompt import sitewright_quality_rules
 
+# User-typed paste prompts stay short. Assembled wizard/Codex prompts include
+# Sitewright rules + structured spec and need a much higher ceiling.
 MAX_PROMPT_CHARS = 4000
+MAX_BUILD_PROMPT_CHARS = 24000
 MAX_HTML_BYTES = 1_500_000
 
 SCRIPT_RE = re.compile(r"<script\b[^>]*>.*?</script>", re.IGNORECASE | re.DOTALL)
@@ -218,10 +227,35 @@ BANNED_BRAND_STARTS = {
 }
 
 
+def _is_assembled_build_prompt(prompt: str) -> bool:
+    text = prompt or ""
+    markers = (
+        "Siaw Sitewright",
+        "WEBSITE GOALS",
+        "STRUCTURED SPEC",
+        "TECHNICAL REQUIREMENTS",
+        "Write real files into this working directory",
+    )
+    return any(marker in text for marker in markers)
+
+
 def _clean_prompt(prompt: str) -> str:
-    text = re.sub(r"\s+", " ", (prompt or "").strip())
-    if not text:
+    raw = (prompt or "").strip()
+    if not raw:
         raise ValidationError("Describe the website you want to create.")
+    if _is_assembled_build_prompt(raw):
+        # Keep structure for Codex/wizard builds. Only tidy runaway blank lines.
+        text = re.sub(r"[ \t]+\n", "\n", raw)
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
+        limit = MAX_BUILD_PROMPT_CHARS
+        if len(text) > limit:
+            raise ValidationError(
+                f"The generation brief is too large ({len(text)} characters). "
+                f"Maximum is {limit}."
+            )
+        return text
+
+    text = re.sub(r"\s+", " ", raw)
     if len(text) > MAX_PROMPT_CHARS:
         raise ValidationError(f"Keep the brief under {MAX_PROMPT_CHARS} characters.")
     return text
@@ -874,28 +908,12 @@ def _ollama_host() -> str:
 
 
 def _ollama_list_models(host: str | None = None) -> list[str]:
-    base = (host or _ollama_host()).rstrip("/")
-    try:
-        req = urlrequest.Request(f"{base}/api/tags", method="GET", headers={"User-Agent": "SiawVisualEditor/1.0"})
-        with urlrequest.urlopen(req, timeout=1.5) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except Exception:
-        return []
-    names: list[str] = []
-    for item in data.get("models") or []:
-        name = str(item.get("name") or item.get("model") or "").strip()
-        if not name:
-            continue
-        # Skip embedding-only and empty cloud placeholders when possible.
-        lowered = name.lower()
-        if "embed" in lowered or "nomic-embed" in lowered:
-            continue
-        names.append(name)
-    return names
+    # Ollama is intentionally disabled. Never probe the local daemon.
+    return []
 
 
 def _ollama_reachable() -> bool:
-    return bool(_ollama_list_models())
+    return False
 
 
 def _model_capability_score(name: str) -> int:
@@ -925,9 +943,8 @@ def _model_capability_score(name: str) -> int:
         score = max(score, 95)
     if "qwen2.5" in n and score < 55:
         score = max(score, 50)
-    # Prefer local weights over cloud stubs when scores tie.
-    if "cloud" in n:
-        score -= 3
+    if "llama3.1" in n or "llama3.2" in n:
+        score = max(score, score + 2)
     return score
 
 
@@ -935,93 +952,164 @@ def _model_can_emit_full_html(name: str) -> bool:
     return _model_capability_score(name) >= 70
 
 
+def _model_is_local_friendly(name: str) -> bool:
+    """True for models that usually run on a laptop without tensor overflow."""
+    score = _model_capability_score(name)
+    return 20 <= score <= 60
+
+
+def _resolve_preferred_model(available: list[str], preferred: str) -> str:
+    if not preferred:
+        return ""
+    if preferred in available:
+        return preferred
+    for name in available:
+        if name == preferred or name.startswith(preferred + ":"):
+            return name
+        if preferred.startswith(name.split(":")[0]) and name.split(":")[0] == preferred.split(":")[0]:
+            return name
+    return ""
+
+
 def _pick_ollama_model(available: list[str], preferred: str = "") -> str:
     if not available:
         return preferred or "llama3.1:8b"
 
-    ranked = sorted(available, key=_model_capability_score, reverse=True)
-    best = ranked[0]
-
-    resolved_preferred = ""
-    if preferred:
-        if preferred in available:
-            resolved_preferred = preferred
-        else:
-            for name in available:
-                if name == preferred or name.startswith(preferred + ":") or preferred.startswith(name.split(":")[0]):
-                    if name.split(":")[0] == preferred.split(":")[0]:
-                        resolved_preferred = name
-                        break
-
-    # Auto-upgrade tiny chat models when a large local model is installed.
+    resolved_preferred = _resolve_preferred_model(available, preferred)
     if resolved_preferred:
-        if _model_capability_score(best) >= 70 and _model_capability_score(resolved_preferred) < 45:
-            return best
         return resolved_preferred
 
-    return best
+    # Prefer a reliable local chat model over huge weights that often fail to load.
+    friendly = [name for name in available if _model_is_local_friendly(name)]
+    pool = friendly or available
+    return sorted(pool, key=_model_capability_score, reverse=True)[0]
 
 
-def _resolve_provider() -> str:
-    if getattr(settings, "SIAW_AI_FORCE_OFFLINE", False):
-        return "offline"
-    forced = (getattr(settings, "SIAW_AI_PROVIDER", "auto") or "auto").strip().lower()
-    if forced in {"offline", "ollama", "openai"}:
-        if forced == "ollama" and not _ollama_reachable():
-            return "offline"
-        if forced == "openai":
-            key = (
-                getattr(settings, "SIAW_AI_API_KEY", "")
-                or getattr(settings, "OPENAI_API_KEY", "")
-                or ""
-            ).strip()
-            return "openai" if key else "offline"
-        return forced
-    # auto: local Ollama first (free), then OpenAI key, else offline templates.
-    if _ollama_reachable():
-        return "ollama"
-    key = (
+def _ollama_models_to_try(preferred: str = "") -> list[str]:
+    available = _ollama_list_models()
+    if not available:
+        return [preferred or "llama3.1:8b"]
+    primary = _pick_ollama_model(available, preferred)
+    ranked = sorted(available, key=_model_capability_score, reverse=True)
+    # Prefer laptop-friendly chat models. Skip huge weights unless the user
+    # explicitly set SIAW_AI_MODEL (they often 500 or starve smaller models).
+    friendly = [name for name in ranked if _model_is_local_friendly(name)]
+    huge = [name for name in ranked if _model_capability_score(name) >= 90]
+    mid = [name for name in ranked if name not in friendly and name not in huge]
+    preferred_resolved = _resolve_preferred_model(available, preferred)
+    allow_huge = preferred_resolved in huge
+    ordered: list[str] = []
+    for name in [primary, *friendly, *mid, *(huge if allow_huge else [])]:
+        if name and name not in ordered:
+            ordered.append(name)
+    return ordered
+
+
+def _codex_binary() -> Path | None:
+    """Locate the Codex CLI used for full website builds."""
+    candidates: list[Path] = []
+    configured = (getattr(settings, "SIAW_CODEX_BIN", "") or "").strip()
+    if configured:
+        candidates.append(Path(configured).expanduser())
+    which = shutil.which("codex")
+    if which:
+        candidates.append(Path(which))
+    candidates.append(Path("/Applications/ChatGPT.app/Contents/Resources/codex"))
+    for path in candidates:
+        try:
+            if path.is_file() and os.access(path, os.X_OK):
+                return path.resolve()
+        except OSError:
+            continue
+    return None
+
+
+def _codex_available() -> bool:
+    if getattr(settings, "SIAW_CODEX_DISABLE", False):
+        return False
+    return _codex_binary() is not None
+
+
+def _openai_key() -> str:
+    return (
         getattr(settings, "SIAW_AI_API_KEY", "")
         or getattr(settings, "OPENAI_API_KEY", "")
         or ""
     ).strip()
-    if key:
+
+
+def _resolve_chat_provider() -> str:
+    """Chat backend for short JSON/copy calls. Same stack as site builds: Codex first."""
+    if getattr(settings, "SIAW_AI_FORCE_OFFLINE", False):
+        return "offline"
+    forced = (getattr(settings, "SIAW_AI_PROVIDER", "auto") or "auto").strip().lower()
+    if forced == "offline":
+        return "offline"
+    if forced == "openai":
+        return "openai" if _openai_key() else "offline"
+    # Prefer Codex + gpt-5.6 for drafts too. Ollama is disabled.
+    if forced in {"auto", "codex", "ollama"} and _codex_available():
+        return "codex"
+    if _openai_key():
         return "openai"
     return "offline"
 
 
-def _ai_settings() -> dict:
-    provider = _resolve_provider()
+def _resolve_provider() -> str:
+    """Site-build provider: Codex, then OpenAI, then offline. Ollama is never used."""
+    if getattr(settings, "SIAW_AI_FORCE_OFFLINE", False):
+        return "offline"
+    forced = (getattr(settings, "SIAW_AI_PROVIDER", "auto") or "auto").strip().lower()
+    if forced == "offline":
+        return "offline"
+    if forced == "openai":
+        return "openai" if _openai_key() else "offline"
+
+    # ollama env values are ignored; prefer Codex, then OpenAI.
+    if forced in {"auto", "codex", "ollama"} and _codex_available():
+        return "codex"
+    if forced == "codex":
+        return "offline"
+
+    if _openai_key():
+        return "openai"
+    return "offline"
+
+
+def _ai_settings(*, chat: bool = False) -> dict:
+    provider = _resolve_chat_provider() if chat else _resolve_provider()
     preferred_model = (getattr(settings, "SIAW_AI_MODEL", "") or "").strip()
     timeout_setting = int(getattr(settings, "SIAW_AI_TIMEOUT_SECONDS", 0) or 0)
     explicit_base = (getattr(settings, "SIAW_AI_BASE_URL", "") or "").strip().rstrip("/")
 
-    if provider == "ollama":
-        host = _ollama_host()
-        available = _ollama_list_models(host)
-        model = _pick_ollama_model(available, preferred_model)
+    if provider == "codex":
+        binary = _codex_binary()
+        model = (getattr(settings, "SIAW_CODEX_MODEL", "") or "").strip() or "gpt-5.6-sol"
+        # Chat/draft calls should not wait a full site-build timeout by default.
+        chat_timeout = timeout_setting or (180 if chat else 0)
+        site_timeout = int(getattr(settings, "SIAW_CODEX_TIMEOUT_SECONDS", 900) or 900)
         return {
-            "provider": "ollama",
-            "api_key": "ollama",
-            "base_url": f"{host}/v1",
+            "provider": "codex",
+            "api_key": "",
+            "base_url": "",
             "model": model,
-            "timeout": timeout_setting or 300,
-            "label": f"Ollama ({model})",
+            "timeout": chat_timeout or site_timeout,
+            "label": f"Codex CLI ({model})",
+            "binary": str(binary) if binary else "",
         }
 
     if provider == "openai":
-        api_key = (
-            getattr(settings, "SIAW_AI_API_KEY", "")
-            or getattr(settings, "OPENAI_API_KEY", "")
-            or ""
-        ).strip()
+        api_key = _openai_key()
+        model = preferred_model or (
+            (getattr(settings, "SIAW_CODEX_MODEL", "") or "").strip() or "gpt-5.6-sol"
+        )
         return {
             "provider": "openai",
             "api_key": api_key,
             "base_url": explicit_base or "https://api.openai.com/v1",
-            "model": preferred_model or "gpt-4.1-mini",
+            "model": model,
             "timeout": timeout_setting or 90,
-            "label": f"OpenAI ({preferred_model or 'gpt-4.1-mini'})",
+            "label": f"OpenAI ({model})",
         }
 
     return {
@@ -1035,7 +1123,7 @@ def _ai_settings() -> dict:
 
 
 def ai_configured() -> bool:
-    return _resolve_provider() in {"ollama", "openai"}
+    return _resolve_provider() in {"codex", "openai"}
 
 
 def ai_status() -> dict:
@@ -1044,7 +1132,7 @@ def ai_status() -> dict:
         "provider": cfg["provider"],
         "model": cfg.get("model") or "",
         "label": cfg.get("label") or cfg["provider"],
-        "configured": cfg["provider"] in {"ollama", "openai"},
+        "configured": cfg["provider"] in {"codex", "openai"},
     }
 
 
@@ -1125,10 +1213,113 @@ def _sanitise_generated_html(html_text: str) -> str:
 MIN_FULL_SITE_CHARS = 7000
 
 
-def _chat_completion(messages: list[dict], *, temperature: float = 0.7) -> str:
-    cfg = _ai_settings()
-    if cfg["provider"] not in {"ollama", "openai"}:
+def _messages_to_prompt(messages: list[dict]) -> str:
+    parts: list[str] = [
+        "You are answering a short text request for the Siaw AI Builder.",
+        "Do not create a website. Do not write HTML, CSS, or project files.",
+        "Reply with ONLY the requested text content. No preamble.",
+        "",
+    ]
+    for message in messages:
+        role = str(message.get("role") or "user").strip().upper()
+        content = str(message.get("content") or "").strip()
+        if content:
+            parts.append(f"{role}:\n{content}")
+            parts.append("")
+    return "\n".join(parts).strip()
+
+
+def _codex_text_completion(prompt: str, *, timeout: int | None = None) -> str:
+    """Run a short Codex chat call with the same model used for site builds."""
+    binary = _codex_binary()
+    if not binary:
+        raise ValidationError(
+            "Codex CLI was not found. Install Codex / ChatGPT desktop, or set SIAW_CODEX_BIN."
+        )
+    model = (getattr(settings, "SIAW_CODEX_MODEL", "") or "").strip() or "gpt-5.6-sol"
+    request_timeout = int(
+        timeout
+        if timeout is not None
+        else (getattr(settings, "SIAW_AI_TIMEOUT_SECONDS", 0) or 180)
+    )
+    with tempfile.TemporaryDirectory(prefix="siaw-codex-chat-") as tmp:
+        work_dir = Path(tmp) / "work"
+        work_dir.mkdir(parents=True, exist_ok=True)
+        last_message = Path(tmp) / "codex-last-message.txt"
+        exec_log = Path(tmp) / "codex-chat.log"
+        cmd = [
+            str(binary),
+            "exec",
+            "-C",
+            str(work_dir),
+            "--skip-git-repo-check",
+            "--ephemeral",
+            "-s",
+            "workspace-write",
+            "-c",
+            'approval_policy="never"',
+            "-o",
+            str(last_message),
+            "-m",
+            model,
+            prompt,
+        ]
+        try:
+            with exec_log.open("w", encoding="utf-8") as log_file:
+                completed = subprocess.run(
+                    cmd,
+                    cwd=str(work_dir),
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=request_timeout,
+                    env=os.environ.copy(),
+                )
+        except subprocess.TimeoutExpired as exc:
+            raise ValidationError(
+                f"Codex timed out after {request_timeout} seconds while drafting."
+            ) from exc
+        except FileNotFoundError as exc:
+            raise ValidationError("Codex CLI could not be started.") from exc
+        except OSError as exc:
+            raise ValidationError(f"Could not run Codex: {exc}") from exc
+
+        if completed.returncode != 0:
+            detail = ""
+            try:
+                detail = exec_log.read_text(encoding="utf-8", errors="replace").strip()
+            except OSError:
+                detail = ""
+            detail = detail[-1400:] if detail else "No error output."
+            raise ValidationError(f"Codex failed to draft the prompt. {detail}")
+
+        if last_message.is_file():
+            text = last_message.read_text(encoding="utf-8", errors="replace").strip()
+            if text:
+                return text
+        raise ValidationError("Codex finished without returning draft text.")
+
+
+def _chat_completion(
+    messages: list[dict],
+    *,
+    temperature: float = 0.7,
+    timeout: int | None = None,
+    max_tokens: int | None = None,
+) -> str:
+    cfg = _ai_settings(chat=True)
+    if cfg["provider"] == "codex":
+        return _codex_text_completion(_messages_to_prompt(messages), timeout=timeout)
+    if cfg["provider"] != "openai":
         raise ValidationError("No AI provider is configured.")
+
+    request_timeout = int(timeout if timeout is not None else cfg["timeout"])
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "SiawVisualEditor/1.0",
+    }
+    if cfg.get("api_key"):
+        headers["Authorization"] = f"Bearer {cfg['api_key']}"
 
     payload = {
         "model": cfg["model"],
@@ -1136,18 +1327,10 @@ def _chat_completion(messages: list[dict], *, temperature: float = 0.7) -> str:
         "stream": False,
         "messages": messages,
     }
-    # Encourage longer local completions when models support it.
-    if cfg["provider"] == "ollama":
-        tokens = 14000 if _model_can_emit_full_html(cfg["model"]) else 3500
-        payload["options"] = {"num_predict": tokens, "temperature": temperature}
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
 
     body = json.dumps(payload).encode("utf-8")
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "SiawVisualEditor/1.0",
-    }
-    if cfg.get("api_key"):
-        headers["Authorization"] = f"Bearer {cfg['api_key']}"
     req = urlrequest.Request(
         f"{cfg['base_url']}/chat/completions",
         data=body,
@@ -1155,24 +1338,25 @@ def _chat_completion(messages: list[dict], *, temperature: float = 0.7) -> str:
         method="POST",
     )
     try:
-        with urlrequest.urlopen(req, timeout=cfg["timeout"]) as response:
+        with urlrequest.urlopen(req, timeout=request_timeout) as response:
             data = json.loads(response.read().decode("utf-8"))
     except urlerror.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:400]
         if exc.code == 429:
             raise ValidationError(
-                "AI quota exceeded. Use local Ollama instead: keep Ollama running, "
-                "set SIAW_AI_PROVIDER=ollama, restart the server."
+                "AI quota exceeded. Check your OpenAI plan, or wait and try again."
             ) from exc
         raise ValidationError(f"AI provider error ({exc.code}): {detail or exc.reason}") from exc
     except urlerror.URLError as exc:
-        hint = ""
-        if cfg["provider"] == "ollama":
-            hint = " Is Ollama running? Try: ollama serve && ollama run llama3.1:8b"
-        raise ValidationError(f"Could not reach the AI provider: {exc.reason}.{hint}") from exc
+        reason = str(getattr(exc, "reason", exc) or "").lower()
+        if "timed out" in reason or "timeout" in reason:
+            raise ValidationError(
+                "The AI request timed out. Raise SIAW_AI_TIMEOUT_SECONDS and try again."
+            ) from exc
+        raise ValidationError(f"Could not reach the AI provider: {exc.reason}.") from exc
     except TimeoutError as exc:
         raise ValidationError(
-            "The AI request timed out. For Ollama, try a smaller model or raise SIAW_AI_TIMEOUT_SECONDS."
+            "The AI request timed out. Raise SIAW_AI_TIMEOUT_SECONDS and try again."
         ) from exc
 
     try:
@@ -1217,6 +1401,127 @@ def _pairs_from_json(items, *, title_key: str, body_key: str, limit: int = 3) ->
         if title and body:
             pairs.append((title[:80], body[:280]))
     return tuple(pairs)
+
+
+def compose_prompt_from_answers(answers: dict) -> str:
+    """Deterministic labeled brief used when no chat AI provider is available."""
+    brand = str(answers.get("brand") or "").strip()
+    sector = str(answers.get("sector") or "").strip()
+    market = str(answers.get("market") or "").strip()
+    goal_tone = str(answers.get("goal_tone") or "").strip()
+    must = str(answers.get("must_include") or "").strip()
+    if not brand or not sector or not market or not goal_tone:
+        raise ValidationError("Answer brand, sector, market, and goal before drafting a prompt.")
+
+    parts = re.split(r"[.;\n]", goal_tone)
+    parts = [part.strip() for part in parts if part.strip()]
+    offer = parts[0] if parts else goal_tone
+    tone = ". ".join(parts[1:]) if len(parts) > 1 else offer
+    lower = goal_tone.lower()
+    cta = "Get started"
+    if "book" in lower:
+        cta = "Book now"
+    elif "buy" in lower or "shop" in lower:
+        cta = "Shop now"
+    elif "contact" in lower or "call" in lower:
+        cta = "Contact us"
+    elif "demo" in lower or "trial" in lower:
+        cta = "Book a demo"
+    elif "sign up" in lower or "join" in lower:
+        cta = "Sign up"
+
+    audience = market
+    if "," in market:
+        audience = market.split(",", 1)[1].strip() or market
+
+    lines = [
+        f"Brand name: {brand}",
+        f"Sector: {sector}",
+        f"Location / market: {market}",
+        f"Audience: {audience}",
+        f"Offer: {offer}",
+        f"Personality / tone: {tone}",
+        f"Primary CTA: {cta}",
+    ]
+    if must:
+        lines.append(f"Must include: {must}")
+    lines.append(
+        "Extra notes: Create a complete static multipage website with a strong hero, "
+        "clear sections, and export-ready HTML."
+    )
+    return "\n".join(lines)
+
+
+def draft_prompt_from_answers(answers: dict) -> tuple[str, str, str]:
+    """Turn help-wizard answers into a labeled brief via Codex (gpt-5.6) when available.
+
+    Returns (prompt, suggested_name, provider). Falls back to local compose if the
+    model is offline or returns unusable text.
+    """
+    brand = str(answers.get("brand") or "").strip()
+    sector = str(answers.get("sector") or "").strip()
+    market = str(answers.get("market") or "").strip()
+    goal_tone = str(answers.get("goal_tone") or "").strip()
+    must = str(answers.get("must_include") or "").strip()
+    fallback = compose_prompt_from_answers(answers)
+    suggested = brand[:160]
+
+    if not ai_configured():
+        return fallback, suggested, "offline"
+
+    labels = ", ".join(PROMPT_FIELD_LABELS)
+    system = (
+        "You write website briefs for a visual website builder. "
+        "Return ONLY a labeled brief using these exact field labels, one per line, "
+        f"as Label: value. Use these labels when relevant: {labels}. "
+        "Always include: Brand name, Sector, Location / market, Audience, Offer, "
+        "Personality / tone, Primary CTA, Extra notes. "
+        "Expand short answers into clear, specific copy. Do not invent fake awards. "
+        "No markdown fences. No HTML. No preamble."
+    )
+    user = (
+        "Turn these answers into a strong website brief:\n"
+        f"- Brand or business name: {brand}\n"
+        f"- Kind of business: {sector}\n"
+        f"- Where / who for: {market}\n"
+        f"- Visitor goal and feeling: {goal_tone}\n"
+        f"- Must include: {must or '(none)'}\n"
+        "Keep the whole brief under 1200 characters."
+    )
+    try:
+        raw = _chat_completion(
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            temperature=0.55,
+            timeout=90,
+            max_tokens=900,
+        )
+    except ValidationError:
+        return fallback, suggested, "offline"
+
+    text = (raw or "").strip()
+    # Strip accidental fences / chatter.
+    fence = re.search(r"```(?:text|markdown)?\s*(.*?)```", text, re.IGNORECASE | re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+    # Keep from first known label onward if the model added a lead-in.
+    for label in PROMPT_FIELD_LABELS:
+        marker = f"{label}:"
+        idx = text.lower().find(marker.lower())
+        if idx >= 0:
+            text = text[idx:].strip()
+            break
+
+    fields = _prompt_fields(text)
+    if "brand name" not in fields and brand:
+        text = f"Brand name: {brand}\n{text}".strip()
+        fields = _prompt_fields(text)
+    if len(text) < 40 or "brand name" not in fields:
+        return fallback, suggested, "offline"
+
+    if len(text) > MAX_PROMPT_CHARS:
+        text = text[:MAX_PROMPT_CHARS].rsplit("\n", 1)[0].strip()
+
+    return text, suggested, _resolve_chat_provider()
 
 
 def enrich_brief_via_llm(prompt: str, brief: SiteBrief) -> SiteBrief:
@@ -1302,6 +1607,237 @@ def _html_is_thin(html_text: str) -> bool:
     return not all(token in lowered for token in required)
 
 
+def _codex_build_prompt(
+    prompt: str,
+    brief: SiteBrief,
+    project_name: str,
+    *,
+    seed_files: dict[str, Path] | None = None,
+) -> str:
+    brand = (project_name or brief.brand or "Brand").strip()[:80]
+    seed_paths = sorted((seed_files or {}).keys())
+    logo_paths = [path for path in seed_paths if path.startswith("images/brand/logo")]
+    upload_paths = [path for path in seed_paths if path.startswith("images/uploads/")]
+    media_rules = [
+        "Speed rules (important):",
+        "- Do NOT generate, download, or invent new image binary files.",
+        "- Do NOT use image-generation tools.",
+        "- Do not create a separate assets/ folder for new downloads.",
+        "- Stop as soon as index.html + styles.css are complete and look good.",
+    ]
+    if seed_paths:
+        media_rules.extend(
+            [
+                "",
+                "Local media already present in this folder (REQUIRED):",
+                *[f"- {path}" for path in seed_paths],
+                "- Keep these files. Do not delete or rename them.",
+            ]
+        )
+        if logo_paths:
+            media_rules.append(
+                f"- Use {logo_paths[0]} as the header/footer brand logo via <img class=\"brand-logo\">."
+            )
+        if upload_paths:
+            media_rules.extend(
+                [
+                    "- You MUST use EVERY file under images/uploads/ in visible <img> tags "
+                    "(hero, story, gallery/portfolio, service cards, or about).",
+                    "- Prefer local uploads over stock photos.",
+                    "- After all local uploads are used, you may add extra Unsplash https://images.unsplash.com/... URLs.",
+                ]
+            )
+        else:
+            media_rules.append(
+                "- For extra photography only, use direct https://images.unsplash.com/... URLs in <img src>."
+            )
+    else:
+        media_rules.append(
+            "- For photos, use direct https://images.unsplash.com/... URLs in <img src>."
+        )
+
+    return (
+        f"{sitewright_quality_rules(multipage=False)}\n\n"
+        "Write real files into this working directory now.\n"
+        "Speed matters, but quality and sector fidelity matter more.\n"
+        "Hard file requirements:\n"
+        "1. Create index.html as the homepage entry file.\n"
+        "2. One linked CSS file only: styles.css.\n"
+        "3. No React/Vite/Next app shell. No build step. No package.json.\n"
+        "4. Delete SIAW_BUILD_BRIEF.md when finished.\n\n"
+        + "\n".join(media_rules)
+        + "\n\n"
+        f"Project name: {brand}\n"
+        f"Seed brand: {brief.brand}\n"
+        f"Sector: {brief.sector}\n"
+        f"Tagline direction: {brief.tagline}\n"
+        f"Primary CTA: {brief.cta}\n"
+        f"Audience: {brief.audience}\n\n"
+        f"Client brief:\n{prompt.strip()}\n"
+    )
+
+
+def _run_codex_exec(work_dir: Path, prompt: str) -> None:
+    binary = _codex_binary()
+    if not binary:
+        raise ValidationError(
+            "Codex CLI was not found. Install Codex / ChatGPT desktop, or set SIAW_CODEX_BIN."
+        )
+    timeout = int(getattr(settings, "SIAW_CODEX_TIMEOUT_SECONDS", 900) or 900)
+    last_message = work_dir.parent / "codex-last-message.txt"
+    cmd = [
+        str(binary),
+        "exec",
+        "-C",
+        str(work_dir),
+        "--skip-git-repo-check",
+        "--ephemeral",
+        "-s",
+        "workspace-write",
+        "-c",
+        'approval_policy="never"',
+        "-o",
+        str(last_message),
+    ]
+    model = (getattr(settings, "SIAW_CODEX_MODEL", "") or "").strip() or "gpt-5.6-sol"
+    cmd.extend(["-m", model])
+    cmd.append(prompt)
+
+    # Stream Codex output to a log file. capture_output=True can deadlock when the
+    # CLI writes enough stdout/stderr to fill the OS pipe buffer.
+    exec_log = work_dir.parent / "codex-exec.log"
+    try:
+        with exec_log.open("w", encoding="utf-8") as log_file:
+            completed = subprocess.run(
+                cmd,
+                cwd=str(work_dir),
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=timeout,
+                env=os.environ.copy(),
+            )
+    except subprocess.TimeoutExpired as exc:
+        raise ValidationError(
+            f"Codex timed out after {timeout} seconds while building the website."
+        ) from exc
+    except FileNotFoundError as exc:
+        raise ValidationError("Codex CLI could not be started.") from exc
+    except OSError as exc:
+        raise ValidationError(f"Could not run Codex: {exc}") from exc
+
+    if completed.returncode != 0:
+        detail = ""
+        try:
+            detail = exec_log.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            detail = ""
+        detail = detail[-1400:] if detail else "No error output."
+        raise ValidationError(f"Codex failed to build the website. {detail}")
+
+
+def _finalize_codex_source(project_dir: Path, *, brief: SiteBrief) -> GeneratedWebsite:
+    source_dir = project_dir / "source"
+    editor_dir = project_dir / "editor"
+    editor_dir.mkdir(parents=True, exist_ok=True)
+
+    brief_helper = source_dir / "SIAW_BUILD_BRIEF.md"
+    if brief_helper.is_file():
+        brief_helper.unlink(missing_ok=True)
+
+    html_files = sorted(
+        path for path in source_dir.rglob("*.html")
+        if path.is_file() and "node_modules" not in path.parts
+    )
+    if not html_files:
+        raise ValidationError("Codex finished but did not create any HTML files.")
+
+    entry_path = source_dir / "index.html"
+    if not entry_path.is_file():
+        # Promote the first HTML file to index.html when Codex used another name.
+        chosen = html_files[0]
+        if chosen.resolve() != entry_path.resolve():
+            entry_path.write_text(chosen.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+
+    from .pages import expand_hash_navigation_to_pages
+
+    expand_hash_navigation_to_pages(source_dir, "index.html")
+
+    original = project_dir / "original.zip"
+    with zipfile.ZipFile(original, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(source_dir.rglob("*")):
+            if path.is_file():
+                archive.write(path, path.relative_to(source_dir).as_posix())
+
+    entry_file = "index.html"
+    entry_html = (source_dir / entry_file).read_text(encoding="utf-8", errors="replace")
+    parser = StylesheetParser()
+    parser.feed(entry_html)
+    stylesheets = [
+        href for href in parser.stylesheets
+        if href.lower().startswith(("http://", "https://", "//")) or str(href).endswith(".css")
+    ]
+    for item in [
+        path.relative_to(source_dir).as_posix()
+        for path in source_dir.rglob("*.css")
+        if path.is_file()
+    ]:
+        if item not in stylesheets:
+            stylesheets.append(item)
+
+    return GeneratedWebsite(
+        entry_file=entry_file,
+        stylesheet_files=stylesheets,
+        provider="codex",
+        brief={
+            "brand": brief.brand,
+            "sector": brief.sector,
+            "tagline": brief.tagline,
+            "cta": brief.cta,
+            "summary": brief.summary,
+        },
+    )
+
+
+def create_website_with_codex(
+    project_dir: Path,
+    *,
+    prompt: str,
+    project_name: str = "",
+    brief: SiteBrief | None = None,
+    seed_files: dict[str, Path] | None = None,
+) -> GeneratedWebsite:
+    """Build a full website into project_dir/source using Codex exec."""
+    site_brief = brief or build_brief(prompt, project_name=project_name)
+    source_dir = project_dir / "source"
+    editor_dir = project_dir / "editor"
+    if source_dir.exists():
+        for child in list(source_dir.iterdir()):
+            if child.is_file():
+                child.unlink()
+            elif child.is_dir():
+                shutil.rmtree(child)
+    source_dir.mkdir(parents=True, exist_ok=True)
+    editor_dir.mkdir(parents=True, exist_ok=True)
+
+    (source_dir / "SIAW_BUILD_BRIEF.md").write_text(
+        f"# Build brief\n\nProject: {project_name or site_brief.brand}\n\n{prompt.strip()}\n",
+        encoding="utf-8",
+    )
+    # Seed brand assets before Codex runs so the model can reference real files.
+    for relative, source_path in (seed_files or {}).items():
+        if not source_path or not Path(source_path).is_file():
+            continue
+        target = source_dir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, target)
+    _run_codex_exec(
+        source_dir,
+        _codex_build_prompt(prompt, site_brief, project_name, seed_files=seed_files),
+    )
+    return _finalize_codex_source(project_dir, brief=site_brief)
+
+
 def generate_website_files(prompt: str, *, project_name: str = "", force_offline: bool = False) -> tuple[dict[str, str], str, SiteBrief]:
     """Return (files_by_relative_path, provider, brief)."""
     brief = build_brief(prompt, project_name=project_name)
@@ -1318,23 +1854,10 @@ def generate_website_files(prompt: str, *, project_name: str = "", force_offline
             return replace(current, brand=name[:60])
         return current
 
-    if provider == "ollama":
-        cfg = _ai_settings()
-        # Large local models can emit a full HTML site. Small ones cannot.
-        if _model_can_emit_full_html(cfg.get("model") or ""):
-            try:
-                html_text = generate_with_llm(prompt, brief)
-                if not _html_is_thin(html_text):
-                    return {"index.html": html_text}, "ollama", brief
-            except ValidationError:
-                pass
-        try:
-            brief = enrich_brief_via_llm(prompt, brief)
-        except ValidationError:
-            # Still ship a full site from the seed brief if JSON parsing fails.
-            pass
-        brief = _prefer_project_brand(brief)
-        return render_offline_site(brief), "ollama", brief
+    # Codex builds directly into a project directory via create_website_from_prompt.
+    # For file-dict callers, fall through to chat/offline assemblers.
+    if provider == "codex":
+        provider = _resolve_chat_provider() if _resolve_chat_provider() != "offline" else "offline"
 
     if provider == "openai":
         try:
@@ -1429,13 +1952,31 @@ def create_website_from_prompt(
     prompt: str,
     project_name: str = "",
     force_offline: bool = False,
+    seed_files: dict[str, Path] | None = None,
 ) -> GeneratedWebsite:
+    brief = build_brief(prompt, project_name=project_name)
+    if not force_offline and _resolve_provider() == "codex":
+        return create_website_with_codex(
+            project_dir,
+            prompt=prompt,
+            project_name=project_name,
+            brief=brief,
+            seed_files=seed_files,
+        )
+
     files, provider, brief = generate_website_files(
         prompt,
         project_name=project_name,
         force_offline=force_offline,
     )
     result = materialize_generated_project(project_dir, files=files)
+    source_dir = project_dir / "source"
+    for relative, source_path in (seed_files or {}).items():
+        if not source_path or not Path(source_path).is_file():
+            continue
+        target = source_dir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, target)
     return GeneratedWebsite(
         entry_file=result.entry_file,
         stylesheet_files=result.stylesheet_files,

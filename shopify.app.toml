@@ -1,0 +1,31 @@
+# Siaw Visual Editor | merchant-installable Shopify app
+# Merchants add this from Shopify Admin / App Store, like any other app.
+# Sync with: shopify app deploy --client-id e37e053ee790e7eede659f5b6382600b --force
+
+name = "Siaw Visual Editor"
+client_id = "e37e053ee790e7eede659f5b6382600b"
+application_url = "https://4540-2001-9e8-c45a-e400-2c92-db82-885e-671d.ngrok-free.app/shopify/app/"
+embedded = true
+
+[access_scopes]
+scopes = "read_products,read_product_listings,read_files,read_themes"
+
+[auth]
+redirect_urls = [
+  "https://4540-2001-9e8-c45a-e400-2c92-db82-885e-671d.ngrok-free.app/shopify/callback/",
+  "https://4540-2001-9e8-c45a-e400-2c92-db82-885e-671d.ngrok-free.app/shopify/auth/",
+]
+
+[webhooks]
+api_version = "2025-10"
+
+  [[webhooks.subscriptions]]
+  topics = ["app/uninstalled"]
+  uri = "/shopify/webhook/"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+  uri = "/shopify/webhook/"
+
+[pos]
+embedded = false

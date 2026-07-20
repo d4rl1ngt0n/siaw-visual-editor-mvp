@@ -26,6 +26,464 @@
 })();
 
 (() => {
+  const root = document.querySelector("[data-ai-builder]");
+  if (!root) return;
+
+  const steps = {
+    gate: root.querySelector('[data-ai-step="gate"]'),
+    help: root.querySelector('[data-ai-step="help"]'),
+    compose: root.querySelector('[data-ai-step="compose"]'),
+  };
+  const page = document.querySelector(".ai-build-page");
+  const lead = document.querySelector("[data-ai-heading-lead]");
+  const composeNote = root.querySelector("[data-ai-compose-note]");
+  const helpForm = root.querySelector("[data-ai-help-form]");
+  const journey = root.querySelector("[data-ai-journey]");
+  const slides = [...(root.querySelectorAll("[data-ai-slide]") || [])];
+  const stageBoard = root.querySelector("[data-ai-journey-stage]");
+  const stageCard = root.querySelector("[data-ai-stage-card]");
+  const building = root.querySelector("[data-ai-building]");
+  const buildingTitle = root.querySelector("[data-ai-building-title]");
+  const buildingLead = root.querySelector("[data-ai-building-lead]");
+  const buildingSteps = [...(root.querySelectorAll("[data-build-step]") || [])];
+  const backBtn = root.querySelector("[data-ai-journey-back]");
+  const progressLabel = root.querySelector("[data-ai-progress-label]");
+  const progressPct = root.querySelector("[data-ai-progress-pct]");
+  const progressBar = root.querySelector("[data-ai-progress-bar]");
+  const progressFill = root.querySelector("[data-ai-progress-fill]");
+  const sectorValue = root.querySelector("[data-ai-sector-value]");
+  const sectorDisplay = root.querySelector("[data-ai-sector-display]");
+  const mustInput = root.querySelector("[data-ai-must-input]");
+  const floatCards = [...(root.querySelectorAll("[data-ai-float]") || [])];
+  const answerTrail = root.querySelector("[data-ai-answer-trail]");
+  const nameInput = root.querySelector('#generateForm input[name="name"]');
+  const promptInput = root.querySelector('#generateForm textarea[name="prompt"]');
+  const draftUrl = root.getAttribute("data-draft-prompt-url") || "/projects/draft-prompt/";
+  const totalSlides = slides.length || 5;
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let slideIndex = 0;
+  let drafting = false;
+  let buildTimer = null;
+
+  const ANSWER_META = [
+    { key: "brand", label: "Brand" },
+    { key: "sector", label: "Industry" },
+    { key: "market", label: "Audience" },
+    { key: "goal_tone", label: "Goal & feel" },
+    { key: "must_include", label: "Must include" },
+  ];
+
+  const FLOAT_BY_SLIDE = [
+    [
+      { value: "Harbor & Hearth", text: "A warm restaurant or cafe brand" },
+      { value: "Northline Studio", text: "A clean agency or studio name" },
+      { value: "Lumen Clinic", text: "A calm health or wellness brand" },
+      { value: "Atlas Goods", text: "A product shop or ecommerce brand" },
+    ],
+    [
+      { value: "restaurant / cafe", text: "Restaurant or cafe" },
+      { value: "saas / software", text: "SaaS or software product" },
+      { value: "beauty / wellness", text: "Beauty or wellness brand" },
+      { value: "agency / services", text: "Agency or local services" },
+    ],
+    [
+      { value: "Accra, couples booking weekend dinners", text: "Local diners booking a night out" },
+      { value: "Online, founders launching a first product", text: "Founders launching something new" },
+      { value: "London, busy professionals booking wellness", text: "Busy professionals nearby" },
+      { value: "Global, creative freelancers finding clients", text: "Creatives looking for clients" },
+    ],
+    [
+      { value: "Book a table. Warm, candlelit, premium but welcoming.", text: "Book a visit with a warm premium feel" },
+      { value: "Start a free trial. Clear, modern, confident.", text: "Start a trial with a confident tone" },
+      { value: "Enquire today. Calm, trustworthy, human.", text: "Enquire with a calm, human tone" },
+      { value: "Shop the collection. Bold, editorial, playful.", text: "Shop with a bold editorial feel" },
+    ],
+    [
+      { value: "Hero with clear CTA", text: "A strong hero and clear CTA" },
+      { value: "Services or menu", text: "Services or menu section" },
+      { value: "About / story", text: "About or brand story" },
+      { value: "Contact form", text: "Contact or booking form" },
+    ],
+  ];
+
+  const readCookie = (name) => {
+    const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+    return match ? decodeURIComponent(match[1]) : "";
+  };
+
+  const csrfToken = () =>
+    document.querySelector("[name=csrfmiddlewaretoken]")?.value || readCookie("csrftoken") || "";
+
+  const showFlowStep = (name) => {
+    Object.entries(steps).forEach(([key, el]) => {
+      if (!el) return;
+      el.hidden = key !== name;
+    });
+    page?.classList.toggle("is-journey", name === "help");
+    page?.classList.toggle("is-compose", name === "compose");
+    if (lead) {
+      if (name === "gate") {
+        lead.textContent = "Start with a short guided brief, or paste a prompt you already wrote.";
+      } else if (name === "help") {
+        lead.textContent = "One question at a time. Your answers stack into a brief.";
+      } else if (name === "compose") {
+        const start = (root.getAttribute("data-ai-start") || "").trim().toLowerCase();
+        if (lead.dataset.fromJourney === "1") {
+          lead.textContent = "Review the brief, then generate a full editable website.";
+        } else if (start === "compose" || start === "prompt") {
+          lead.textContent =
+            "Advanced path: paste a finished prompt. For most sites, the guided brief is faster and more reliable.";
+        } else {
+          lead.textContent = "Paste or edit your prompt, then generate an editable site.";
+        }
+      }
+    }
+  };
+
+  const fieldValue = (name) => {
+    if (name === "sector") {
+      const hidden = String(sectorValue?.value || "").trim();
+      if (hidden) return hidden;
+      return String(sectorDisplay?.value || "").trim();
+    }
+    const el = helpForm?.elements?.namedItem(name);
+    if (!el) return "";
+    return String(el.value || "").trim();
+  };
+
+  const syncSectorFromDisplay = () => {
+    const typed = String(sectorDisplay?.value || "").trim();
+    if (typed && sectorValue) sectorValue.value = typed;
+  };
+
+  const updateProgress = () => {
+    const step = Math.min(slideIndex + 1, totalSlides);
+    const pct = Math.round((step / totalSlides) * 100);
+    if (progressLabel) progressLabel.textContent = `Question ${step} of ${totalSlides}`;
+    if (progressPct) progressPct.textContent = `${pct}%`;
+    if (progressFill) progressFill.style.width = `${pct}%`;
+    if (progressBar) progressBar.setAttribute("aria-valuenow", String(step));
+  };
+
+  const renderAnswerTrail = () => {
+    if (!answerTrail) return;
+    const cards = ANSWER_META
+      .slice(0, slideIndex)
+      .map((item) => {
+        const value = fieldValue(item.key);
+        if (!value) return "";
+        return `<article class="ai-answer-card" data-ai-answer-key="${item.key}">
+          <span>${item.label}</span>
+          <strong>${value.replace(/</g, "&lt;")}</strong>
+        </article>`;
+      })
+      .filter(Boolean);
+    answerTrail.innerHTML = cards.join("");
+    answerTrail.hidden = cards.length === 0;
+  };
+
+  const renderFloatCards = () => {
+    const options = FLOAT_BY_SLIDE[slideIndex] || [];
+    floatCards.forEach((card, i) => {
+      const option = options[i];
+      if (!option) {
+        card.hidden = true;
+        card.removeAttribute("data-ai-float-value");
+        return;
+      }
+      card.hidden = false;
+      card.setAttribute("data-ai-float-value", option.value);
+      const text = card.querySelector(".ai-float-text");
+      if (text) text.textContent = option.text;
+      card.classList.toggle("is-selected", fieldValue(slides[slideIndex]?.getAttribute("data-ai-field") || "") === option.value);
+    });
+  };
+
+  const focusActive = () => {
+    const active = slides[slideIndex];
+    const target = active?.querySelector("[data-ai-autofocus], input, textarea");
+    window.setTimeout(() => target?.focus?.(), reduceMotion ? 0 : 220);
+  };
+
+  const setSlide = (index, { animate = true } = {}) => {
+    slideIndex = Math.max(0, Math.min(index, totalSlides - 1));
+    slides.forEach((slide, i) => {
+      const active = i === slideIndex;
+      slide.hidden = !active;
+      slide.classList.toggle("is-active", active);
+      if (active && animate && !reduceMotion) {
+        slide.classList.remove("is-enter");
+        void slide.offsetWidth;
+        slide.classList.add("is-enter");
+      }
+    });
+    if (stageCard && animate && !reduceMotion) {
+      stageCard.classList.remove("is-enter");
+      void stageCard.offsetWidth;
+      stageCard.classList.add("is-enter");
+    }
+    if (backBtn) backBtn.textContent = slideIndex === 0 ? "Start over" : "Back";
+    if (slideIndex === 1 && sectorDisplay && sectorValue?.value && !sectorDisplay.value) {
+      sectorDisplay.value = sectorValue.value;
+    }
+    updateProgress();
+    renderAnswerTrail();
+    renderFloatCards();
+    focusActive();
+  };
+
+  const validateSlide = () => {
+    if (slideIndex === 1) syncSectorFromDisplay();
+    if (slideIndex === 0) return Boolean(fieldValue("brand"));
+    if (slideIndex === 1) return Boolean(fieldValue("sector"));
+    if (slideIndex === 2) return Boolean(fieldValue("market"));
+    if (slideIndex === 3) return Boolean(fieldValue("goal_tone"));
+    return true;
+  };
+
+  const shakeActive = () => {
+    const target = stageCard || slides[slideIndex];
+    if (!target) return;
+    target.classList.remove("is-shake");
+    void target.offsetWidth;
+    target.classList.add("is-shake");
+  };
+
+  const setBuildingVisible = (visible) => {
+    if (stageBoard) stageBoard.hidden = visible;
+    if (answerTrail && visible) answerTrail.hidden = true;
+    if (!visible) renderAnswerTrail();
+    if (building) building.hidden = !visible;
+    journey?.classList.toggle("is-building", visible);
+    if (progressFill && visible) progressFill.style.width = "100%";
+    if (progressLabel && visible) progressLabel.textContent = "Building your brief";
+    if (progressPct && visible) progressPct.textContent = "100%";
+  };
+
+  const stopBuildAnimation = () => {
+    if (buildTimer) {
+      window.clearInterval(buildTimer);
+      buildTimer = null;
+    }
+    buildingSteps.forEach((el) => el.classList.remove("is-active", "is-done"));
+  };
+
+  const startBuildAnimation = () => {
+    stopBuildAnimation();
+    let step = 0;
+    const mark = () => {
+      buildingSteps.forEach((el, i) => {
+        el.classList.toggle("is-done", i < step);
+        el.classList.toggle("is-active", i === step);
+      });
+    };
+    mark();
+    buildTimer = window.setInterval(() => {
+      if (step < buildingSteps.length - 1) {
+        step += 1;
+        mark();
+      }
+    }, reduceMotion ? 900 : 700);
+  };
+
+  const applyDraft = (prompt, name, note) => {
+    if (nameInput && !nameInput.value.trim() && name) nameInput.value = String(name).slice(0, 160);
+    if (promptInput) promptInput.value = prompt;
+    if (composeNote) {
+      composeNote.hidden = false;
+      composeNote.textContent = note;
+    }
+    if (lead) lead.dataset.fromJourney = "1";
+    setBuildingVisible(false);
+    stopBuildAnimation();
+    showFlowStep("compose");
+    promptInput?.focus();
+  };
+
+  const resetJourney = () => {
+    drafting = false;
+    stopBuildAnimation();
+    setBuildingVisible(false);
+    helpForm?.reset();
+    if (sectorValue) sectorValue.value = "";
+    if (sectorDisplay) sectorDisplay.value = "";
+    setSlide(0, { animate: false });
+  };
+
+  const goNext = () => {
+    if (drafting) return;
+    if (!validateSlide()) {
+      shakeActive();
+      focusActive();
+      return;
+    }
+    if (slideIndex >= totalSlides - 1) {
+      void draftPrompt();
+      return;
+    }
+    setSlide(slideIndex + 1);
+  };
+
+  const draftPrompt = async () => {
+    syncSectorFromDisplay();
+    const payload = {
+      brand: fieldValue("brand"),
+      sector: fieldValue("sector"),
+      market: fieldValue("market"),
+      goal_tone: fieldValue("goal_tone"),
+      must_include: fieldValue("must_include"),
+    };
+    if (!payload.brand || !payload.sector || !payload.market || !payload.goal_tone) return;
+
+    drafting = true;
+    setBuildingVisible(true);
+    startBuildAnimation();
+    if (buildingTitle) buildingTitle.textContent = "Crafting your brief…";
+    if (buildingLead) buildingLead.textContent = "Turning your answers into a clear website prompt.";
+
+    try {
+      const response = await fetch(draftUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken(),
+        },
+        credentials: "same-origin",
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.prompt) {
+        throw new Error(data.error || "Could not draft the prompt.");
+      }
+      buildingSteps.forEach((el, i) => {
+        el.classList.toggle("is-done", true);
+        el.classList.toggle("is-active", i === buildingSteps.length - 1);
+      });
+      if (buildingTitle) buildingTitle.textContent = "Brief ready";
+      if (buildingLead) buildingLead.textContent = "Opening the editor prompt so you can tweak anything.";
+      await new Promise((resolve) => window.setTimeout(resolve, reduceMotion ? 120 : 480));
+      const usedAi = Boolean(data.used_ai);
+      const model = data.model ? ` (${data.model})` : "";
+      const note = usedAi
+        ? `Prompt drafted with AI${model}. Edit anything, then generate.`
+        : "Prompt drafted from your answers. Edit anything, then generate.";
+      applyDraft(data.prompt, data.name || payload.brand, note);
+    } catch (err) {
+      setBuildingVisible(false);
+      stopBuildAnimation();
+      if (typeof window.siawAlert === "function") {
+        window.siawAlert({
+          title: "Could not draft prompt",
+          message: err?.message || "Could not reach the AI helper. Try again in a moment.",
+        });
+      } else {
+        window.alert(err?.message || "Could not draft the prompt.");
+      }
+    } finally {
+      drafting = false;
+    }
+  };
+
+  root.querySelectorAll("[data-ai-have-prompt]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (composeNote) composeNote.hidden = true;
+      showFlowStep("compose");
+      promptInput?.focus();
+    });
+  });
+
+  root.querySelectorAll("[data-ai-need-help]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      resetJourney();
+      showFlowStep("help");
+    });
+  });
+
+  root.querySelector("[data-ai-float-cards]")?.addEventListener("click", (event) => {
+    const card = event.target.closest("[data-ai-float]");
+    if (!card || drafting || card.hidden) return;
+    const value = card.getAttribute("data-ai-float-value") || "";
+    if (!value) return;
+    const field = slides[slideIndex]?.getAttribute("data-ai-field");
+    if (field === "brand") {
+      const input = helpForm?.elements?.namedItem("brand");
+      if (input) input.value = value;
+    } else if (field === "sector") {
+      if (sectorValue) sectorValue.value = value;
+      if (sectorDisplay) sectorDisplay.value = value;
+    } else if (field === "market") {
+      const input = helpForm?.elements?.namedItem("market");
+      if (input) input.value = value;
+    } else if (field === "goal_tone") {
+      const input = helpForm?.elements?.namedItem("goal_tone");
+      if (input) input.value = value;
+    } else if (field === "must_include" && mustInput) {
+      const parts = mustInput.value
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean);
+      if (!parts.includes(value)) parts.push(value);
+      mustInput.value = parts.join(", ");
+      renderFloatCards();
+      return;
+    }
+    renderFloatCards();
+    window.setTimeout(() => {
+      if (!drafting) goNext();
+    }, reduceMotion ? 0 : 220);
+  });
+
+  answerTrail?.addEventListener("click", (event) => {
+    const card = event.target.closest("[data-ai-answer-key]");
+    if (!card || drafting) return;
+    const key = card.getAttribute("data-ai-answer-key");
+    const index = ANSWER_META.findIndex((item) => item.key === key);
+    if (index >= 0) setSlide(index);
+  });
+
+  backBtn?.addEventListener("click", () => {
+    if (drafting) return;
+    if (slideIndex === 0) {
+      showFlowStep("gate");
+      return;
+    }
+    setSlide(slideIndex - 1);
+  });
+
+  root.querySelectorAll("[data-ai-journey-next]").forEach((btn) => {
+    btn.addEventListener("click", goNext);
+  });
+
+  helpForm?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    if (event.target?.tagName === "TEXTAREA" && !event.metaKey && !event.ctrlKey) return;
+    event.preventDefault();
+    goNext();
+  });
+
+  helpForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    goNext();
+  });
+
+  window.siawShowAiCompose = () => {
+    if (composeNote) composeNote.hidden = true;
+    showFlowStep("compose");
+  };
+
+  setSlide(0, { animate: false });
+
+  const startMode = (root.getAttribute("data-ai-start") || "").trim().toLowerCase();
+  if (startMode === "help") {
+    resetJourney();
+    showFlowStep("help");
+  } else if (startMode === "compose" || startMode === "prompt") {
+    if (composeNote) composeNote.hidden = true;
+    showFlowStep("compose");
+  }
+})();
+
+(() => {
   const root = document.querySelector("[data-hero-edit]");
   if (!root) return;
 
@@ -1044,16 +1502,28 @@
     });
   });
 
-  const showDraftNotice = (message) => {
-    const workspace = document.querySelector("#workspace");
-    if (!workspace || document.querySelector("[data-draft-notice]")) return;
-    const notice = document.createElement("div");
-    notice.className = "draft-notice";
-    notice.setAttribute("data-draft-notice", "1");
-    notice.innerHTML = `<strong>Draft restored</strong><span>${message}</span>`;
-    const intro = workspace.querySelector(".workspace-intro");
-    if (intro) intro.insertAdjacentElement("afterend", notice);
-    else workspace.prepend(notice);
+  const showDraftNotice = async (message, restoredTab) => {
+    if (document.documentElement.dataset.draftNoticeShown === "1") return;
+    document.documentElement.dataset.draftNoticeShown = "1";
+    const alertFn = typeof window.siawAlert === "function" ? window.siawAlert : null;
+    if (alertFn) {
+      await alertFn("", {
+        eyebrow: "Draft restored",
+        title: restoredTab === "import" ? "Your import is ready" : "Your AI prompt is ready",
+        message,
+        okLabel: restoredTab === "import" ? "Continue to import" : "Continue to generate",
+      });
+    }
+    const panel = document.querySelector(
+      restoredTab === "import" ? '[data-create-panel="import"]' : '[data-create-panel="ai"]'
+    );
+    const focusTarget =
+      panel?.querySelector(restoredTab === "import" ? 'button[type="submit"], .primary-btn' : "[data-generate-submit], button[type='submit']")
+      || panel?.querySelector("textarea, input:not([type='hidden'])");
+    if (focusTarget && typeof focusTarget.focus === "function") {
+      focusTarget.focus({ preventScroll: false });
+      focusTarget.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
   };
 
   const DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -1104,23 +1574,85 @@
 
     const fromAuth = /\/(login|signup)\/?/i.test(document.referrer || "");
     const workspace = document.querySelector("#workspace");
-    if (workspace && (fromAuth || window.location.hash === "#workspace")) {
-      if (window.location.hash !== "#workspace") {
+    const onPersonalWorkspace = /^\/workspace\/?$/i.test(window.location.pathname);
+    if (workspace && (fromAuth || window.location.hash === "#workspace" || onPersonalWorkspace)) {
+      if (!onPersonalWorkspace && window.location.hash !== "#workspace") {
         window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#workspace`);
       }
-      workspace.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (!onPersonalWorkspace) {
+        workspace.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+
+    if (didRestore && restoredTab === "ai" && typeof window.siawShowAiCompose === "function") {
+      window.siawShowAiCompose();
     }
 
     if (fromAuth) {
       if (restoredTab === "import") {
-        showDraftNotice("Your import is ready. Continue below to open it in the editor.");
+        void showDraftNotice(
+          "We kept the file you selected before login. Review it in Import, then open it in the editor.",
+          "import"
+        );
       } else {
-        showDraftNotice("Your AI prompt is ready. Continue below to generate.");
+        void showDraftNotice(
+          "We kept the prompt you wrote before login. Review it in AI Builder, then generate your site.",
+          "ai"
+        );
       }
     }
   };
 
   void restoreDrafts();
+})();
+
+(() => {
+  // Surface form errors and error/warning flashes in a modal so they are not buried under Import.
+  const flash = [...document.querySelectorAll(".messages .message.error, .messages .message.warning")]
+    .map((el) => (el.textContent || "").trim())
+    .filter(Boolean);
+  const formErrors = [...document.querySelectorAll(".upload-form .error, .upload-form .errorlist li")]
+    .map((el) => (el.textContent || "").trim())
+    .filter(Boolean);
+  const unique = [...new Set([...flash, ...formErrors])];
+  if (!unique.length || typeof window.siawAlert !== "function") return;
+
+  const combined = unique.join("\n\n");
+  const needsUpgrade = /upgrade|plan allows|AI generations|active projects/i.test(combined);
+  const accountUrl = document.body?.dataset?.accountUrl || "/account/#plan";
+
+  document.querySelectorAll(".upload-form .error, .upload-form .errorlist li").forEach((el) => {
+    el.setAttribute("data-dialog-handled", "1");
+  });
+
+  const importPanel = document.querySelector('[data-create-panel="import"]');
+  const hasImportError = Boolean(
+    [...(importPanel?.querySelectorAll(".error") || [])].some((el) => (el.textContent || "").trim())
+  );
+  if (hasImportError && typeof window.siawActivateCreateTab === "function") {
+    window.siawActivateCreateTab("import");
+  }
+
+  void window.siawAlert("", {
+    eyebrow: needsUpgrade ? "Plan limit" : "Needs attention",
+    title: needsUpgrade ? "Upgrade to continue" : "Could not continue",
+    message: needsUpgrade
+      ? `${combined}\n\nUpgrade your plan to unlock more projects and AI generations.`
+      : combined,
+    buttons: needsUpgrade
+      ? [
+          { label: "Not now", value: "dismiss" },
+          { label: "Upgrade plan", value: "upgrade", className: "siaw-dialog-btn-primary" },
+        ]
+      : [{ label: "Got it", value: "ok", className: "siaw-dialog-btn-primary" }],
+  }).then((result) => {
+    document.querySelectorAll(".messages .message.error, .messages .message.warning").forEach((el) => {
+      el.setAttribute("hidden", "");
+    });
+    if (result === "upgrade") {
+      window.location.href = accountUrl;
+    }
+  });
 })();
 
 (() => {

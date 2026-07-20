@@ -1,0 +1,75 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Siaw | Shopify</title>
+  {% if shopify_ready and api_key %}
+  <meta name="shopify-api-key" content="{{ api_key }}">
+  <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+  {% endif %}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'builder/shopify_app.css' %}?v=1">
+</head>
+<body class="siaw-shopify-app" data-shop="{{ shop_domain }}" data-host="{{ host }}"
+  {% if shopify_ready %}
+  data-session-url="{{ session_url }}"
+  data-build-url="{{ build_url }}"
+  data-products-url="{{ products_url }}"
+  data-workspace-url="{{ web_workspace_url }}"
+  {% endif %}
+>
+  <main class="siaw-shop-shell">
+    <header class="siaw-shop-header">
+      <div class="siaw-shop-brand">
+        <span class="siaw-shop-mark" aria-hidden="true">S</span>
+        <div>
+          <p class="siaw-shop-eyebrow">Siaw for Shopify</p>
+          <h1>Build a brand site from your store</h1>
+        </div>
+      </div>
+      {% if shop %}
+      <p class="siaw-shop-meta">{{ shop.shop_name|default:shop.shop_domain }}</p>
+      {% elif shop_domain %}
+      <p class="siaw-shop-meta">{{ shop_domain }}</p>
+      {% endif %}
+    </header>
+
+    {% if not shopify_ready %}
+      <section class="siaw-shop-card" role="alert">
+        <h2>App not ready</h2>
+        <p>{{ error|default:"Configure SHOPIFY_API_KEY and SHOPIFY_API_SECRET, then reinstall from Shopify Admin." }}</p>
+      </section>
+    {% else %}
+      <section class="siaw-shop-card">
+        <h2>For every merchant store</h2>
+        <p>
+          Merchants add Siaw from Shopify Admin (Apps → Siaw), the same way they install other apps.
+          Siaw reads your catalog and generates an editable website you can refine in the visual editor.
+        </p>
+        <ol class="siaw-shop-steps">
+          <li>Authorize catalog access when you install</li>
+          <li>Generate a site brief from your products</li>
+          <li>Edit, preview, and export in Siaw</li>
+        </ol>
+        <div class="siaw-shop-actions">
+          <button type="button" class="siaw-shop-btn" data-shopify-build>Build site from catalog</button>
+          <a class="siaw-shop-btn siaw-shop-btn-secondary" href="{{ web_workspace_url }}" target="_top" rel="noopener">Open Siaw workspace</a>
+        </div>
+        <p class="siaw-shop-status" data-shopify-status aria-live="polite">Connecting to your Shopify session…</p>
+      </section>
+
+      <section class="siaw-shop-card siaw-shop-catalog" hidden data-catalog-panel>
+        <h2>Catalog preview</h2>
+        <ul class="siaw-shop-products" data-product-list></ul>
+      </section>
+    {% endif %}
+  </main>
+  {% if shopify_ready %}
+  <script src="{% static 'builder/shopify_app.js' %}?v=1" defer></script>
+  {% endif %}
+</body>
+</html>

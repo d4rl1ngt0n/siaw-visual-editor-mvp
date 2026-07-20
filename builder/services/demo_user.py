@@ -25,8 +25,13 @@ def ensure_demo_user() -> None:
             "is_superuser": False,
         },
     )
-    # Keep the known demo password in sync so the login hint always works.
+    # Keep the known demo password and email in sync so login / account hints stay valid.
+    dirty = False
     if created or not user.check_password(creds["password"]):
         user.set_password(creds["password"])
+        dirty = True
+    if (user.email or "").strip().lower() != creds["email"].lower():
         user.email = creds["email"]
+        dirty = True
+    if dirty:
         user.save()

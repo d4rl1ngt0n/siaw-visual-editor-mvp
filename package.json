@@ -1,0 +1,12 @@
+{
+  "name": "siaw-visual-editor",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Siaw Visual Editor Shopify app config root (Django app hosts the web surface).",
+  "scripts": {
+    "shopify": "shopify"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

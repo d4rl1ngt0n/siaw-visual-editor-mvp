@@ -1,0 +1,206 @@
+{# Full AI Builder gate → linear stage journey → compose. Expects: generate_form, ai_status #}
+{# Optional: start_mode = "gate" | "help" | "compose" #}
+<div
+  class="ai-builder-flow{% if standalone %} ai-builder-flow-standalone{% endif %}"
+  data-ai-builder
+  data-draft-prompt-url="{% url 'builder:draft_prompt' %}"
+  {% if start_mode %}data-ai-start="{{ start_mode }}"{% endif %}
+>
+  <div class="ai-gate" data-ai-step="gate"{% if generate_form.errors or start_mode == "help" or start_mode == "compose" %} hidden{% endif %}>
+    <div class="ai-gate-card">
+      <div class="ai-stage-marks" aria-hidden="true">
+        <span class="ai-stage-mark is-a"></span>
+        <span class="ai-stage-mark is-b"></span>
+        <span class="ai-stage-mark is-c"></span>
+      </div>
+      <p class="ai-gate-title">How do you want to start{% if user.is_authenticated and user.get_username %}, {{ user.get_username }}{% endif %}?</p>
+      <p class="ai-gate-lead">Start with a short guided brief (recommended). Or paste a prompt you already wrote.</p>
+      <div class="ai-gate-actions">
+        <button type="button" class="primary-btn" data-ai-need-help>Guide me</button>
+        <button type="button" class="btn btn-ghost" data-ai-have-prompt>I have a prompt</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="ai-help" data-ai-step="help"{% if start_mode != "help" %} hidden{% endif %}>
+    <div class="ai-stage" data-ai-journey>
+      <div class="ai-stage-top">
+        <div class="ai-journey-progress" aria-live="polite">
+          <div class="ai-journey-progress-top">
+            <span class="ai-journey-progress-label" data-ai-progress-label>Question 1 of 5</span>
+            <span class="ai-journey-progress-pct" data-ai-progress-pct>20%</span>
+          </div>
+          <div class="ai-journey-progress-track" role="progressbar" aria-valuemin="1" aria-valuemax="5" aria-valuenow="1" data-ai-progress-bar>
+            <span class="ai-journey-progress-fill" data-ai-progress-fill></span>
+          </div>
+        </div>
+        <button type="button" class="ai-stage-exit" data-ai-journey-back>Back</button>
+      </div>
+
+      <div class="ai-answer-trail" data-ai-answer-trail hidden aria-label="Your answers so far"></div>
+
+      <form class="ai-stage-form" data-ai-help-form novalidate>
+        <div class="ai-stage-board" data-ai-journey-stage>
+          <aside class="ai-float-cards" data-ai-float-cards aria-label="Suggestions">
+            <button type="button" class="ai-float-card is-tl" data-ai-float hidden>
+              <span class="ai-float-icon" aria-hidden="true"></span>
+              <span class="ai-float-text"></span>
+            </button>
+            <button type="button" class="ai-float-card is-tr" data-ai-float hidden>
+              <span class="ai-float-icon" aria-hidden="true"></span>
+              <span class="ai-float-text"></span>
+            </button>
+            <button type="button" class="ai-float-card is-bl" data-ai-float hidden>
+              <span class="ai-float-icon" aria-hidden="true"></span>
+              <span class="ai-float-text"></span>
+            </button>
+            <button type="button" class="ai-float-card is-br" data-ai-float hidden>
+              <span class="ai-float-icon" aria-hidden="true"></span>
+              <span class="ai-float-text"></span>
+            </button>
+          </aside>
+
+          <div class="ai-stage-card" data-ai-stage-card>
+            <div class="ai-stage-marks" aria-hidden="true">
+              <span class="ai-stage-mark is-a"></span>
+              <span class="ai-stage-mark is-b"></span>
+              <span class="ai-stage-mark is-c"></span>
+            </div>
+
+            <div class="ai-journey-slide is-active" data-ai-slide="0" data-ai-field="brand">
+              <h2 class="ai-stage-title">Let's name your site</h2>
+              <p class="ai-stage-lead">What is the brand or project name visitors should see first?</p>
+              <label class="ai-stage-input">
+                <span class="visually-hidden">Brand name</span>
+                <input type="text" name="brand" maxlength="120" placeholder="e.g. Harbor & Hearth" autocomplete="organization" data-ai-autofocus>
+                <button type="button" class="ai-stage-send" data-ai-journey-next aria-label="Continue">
+                  <span>Continue</span>
+                  <span aria-hidden="true">↑</span>
+                </button>
+              </label>
+            </div>
+
+            <div class="ai-journey-slide" data-ai-slide="1" data-ai-field="sector" hidden>
+              <h2 class="ai-stage-title">What kind of site is this?</h2>
+              <p class="ai-stage-lead">Pick a direction, or type your own industry below.</p>
+              <input type="hidden" name="sector" value="" data-ai-sector-value>
+              <label class="ai-stage-input">
+                <span class="visually-hidden">Industry</span>
+                <input type="text" name="sector_display" maxlength="120" placeholder="e.g. restaurant / cafe" data-ai-sector-display data-ai-autofocus>
+                <button type="button" class="ai-stage-send" data-ai-journey-next aria-label="Continue">
+                  <span>Continue</span>
+                  <span aria-hidden="true">↑</span>
+                </button>
+              </label>
+            </div>
+
+            <div class="ai-journey-slide" data-ai-slide="2" data-ai-field="market" hidden>
+              <h2 class="ai-stage-title">Who is this for?</h2>
+              <p class="ai-stage-lead">Where should it feel local to, and who should visit?</p>
+              <label class="ai-stage-input">
+                <span class="visually-hidden">Market and audience</span>
+                <input type="text" name="market" maxlength="200" placeholder="e.g. Accra, couples booking weekend dinners" data-ai-autofocus>
+                <button type="button" class="ai-stage-send" data-ai-journey-next aria-label="Continue">
+                  <span>Continue</span>
+                  <span aria-hidden="true">↑</span>
+                </button>
+              </label>
+            </div>
+
+            <div class="ai-journey-slide" data-ai-slide="3" data-ai-field="goal_tone" hidden>
+              <h2 class="ai-stage-title">What should visitors do?</h2>
+              <p class="ai-stage-lead">One main action, plus how the site should feel.</p>
+              <label class="ai-stage-input ai-stage-input-tall">
+                <span class="visually-hidden">Goal and tone</span>
+                <textarea name="goal_tone" rows="3" maxlength="400" placeholder="e.g. Book a table. Warm, candlelit, premium but welcoming." data-ai-autofocus></textarea>
+                <button type="button" class="ai-stage-send" data-ai-journey-next aria-label="Continue">
+                  <span>Continue</span>
+                  <span aria-hidden="true">↑</span>
+                </button>
+              </label>
+            </div>
+
+            <div class="ai-journey-slide" data-ai-slide="4" data-ai-field="must_include" hidden>
+              <h2 class="ai-stage-title">Anything it must include?</h2>
+              <p class="ai-stage-lead">Optional. Tap a few ideas, type extras, or skip.</p>
+              <label class="ai-stage-input">
+                <span class="visually-hidden">Must include</span>
+                <input type="text" name="must_include" maxlength="220" placeholder="e.g. Menu, story, contact" data-ai-must-input data-ai-autofocus>
+                <button type="button" class="ai-stage-send" data-ai-journey-next aria-label="Build prompt">
+                  <span>Build prompt</span>
+                  <span aria-hidden="true">↑</span>
+                </button>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="ai-journey-building" data-ai-building hidden>
+          <div class="ai-stage-card ai-stage-card-building">
+            <div class="ai-journey-building-orb" aria-hidden="true"></div>
+            <p class="ai-journey-building-title" data-ai-building-title>Crafting your brief…</p>
+            <p class="ai-journey-building-lead" data-ai-building-lead>Turning your answers into a clear website prompt.</p>
+            <ul class="ai-journey-building-steps" data-ai-building-steps>
+              <li data-build-step="0" class="is-active">Reading your answers</li>
+              <li data-build-step="1">Matching layout and tone</li>
+              <li data-build-step="2">Writing a labeled brief</li>
+              <li data-build-step="3">Ready to generate</li>
+            </ul>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="ai-compose" data-ai-step="compose"{% if not generate_form.errors and start_mode != "compose" %} hidden{% endif %}>
+    <div class="ai-compose-card">
+      {% if start_mode == "compose" %}
+      <p class="ai-compose-note is-visible">
+        This is the advanced paste-prompt path.
+        <a href="{% url 'builder:ai_builder' %}?new=1">Open the guided brief instead</a>
+        if you want background prep and stronger first drafts.
+      </p>
+      {% else %}
+      <p class="ai-compose-note" data-ai-compose-note hidden>Prompt drafted from your answers. Edit anything, then generate.</p>
+      {% endif %}
+      <form method="post" action="{% url 'builder:generate_project' %}" class="upload-form" id="generateForm" data-generate-form>
+        {% csrf_token %}
+        <label>
+          <span>{{ generate_form.name.label }}</span>
+          {{ generate_form.name }}
+          {% for error in generate_form.name.errors %}<small class="error">{{ error }}</small>{% endfor %}
+        </label>
+        <label>
+          <span>{{ generate_form.prompt.label }}</span>
+          {{ generate_form.prompt }}
+          {% for error in generate_form.prompt.errors %}<small class="error">{{ error }}</small>{% endfor %}
+        </label>
+        {% if generate_form.non_field_errors %}
+          {% for error in generate_form.non_field_errors %}<small class="error">{{ error }}</small>{% endfor %}
+        {% endif %}
+        {% if ai_status.provider == "codex" or ai_status.provider == "openai" %}
+        <p class="ai-hint">
+          {% if ai_status.provider == "codex" %}
+            Using <strong>Codex</strong> (<code>{{ ai_status.model }}</code>) with Sitewright quality rules.
+          {% else %}
+            Using <strong>OpenAI</strong> (<code>{{ ai_status.model }}</code>).
+          {% endif %}
+        </p>
+        {% endif %}
+        <p class="ai-compose-switch">
+          <a class="text-btn" href="{% url 'builder:ai_builder' %}?new=1">Prefer guided questions?</a>
+          <button type="button" class="text-btn" data-ai-need-help>Need help writing this?</button>
+        </p>
+        {% if user.is_authenticated %}
+          <button type="submit" class="primary-btn" data-generate-submit>Generate and open editor</button>
+        {% else %}
+          <p class="ai-hint">Your prompt is kept while you log in or sign up.</p>
+          <div class="auth-continue-actions">
+            <a class="primary-btn" data-auth-continue="ai" href="{% url 'builder:login' %}?next={% url 'builder:ai_builder' %}">Log in to generate</a>
+            <a class="btn btn-ghost" data-auth-continue="ai" href="{% url 'builder:signup' %}?next={% url 'builder:ai_builder' %}">Sign up</a>
+          </div>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+</div>

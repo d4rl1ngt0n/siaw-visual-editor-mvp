@@ -38,7 +38,11 @@
         <li data-site-edit="features.ai.list.2">Multipage navigation when the brief needs it</li>
         <li data-site-edit="features.ai.list.3">Editable HTML that opens straight in Safe Edit</li>
       </ul>
-      <a class="btn btn-ink" data-site-edit="features.ai.cta" href="#workspace">Try the AI Builder</a>
+      {% if user.is_authenticated %}
+      <a class="btn btn-ink" data-site-edit="features.ai.cta.auth" href="{% url 'builder:ai_builder' %}">Try the AI Builder</a>
+      {% else %}
+      <a class="btn btn-ink" data-site-edit="features.ai.cta" href="{% url 'builder:login' %}?next={% url 'builder:ai_builder' %}">Try the AI Builder</a>
+      {% endif %}
     </div>
     <figure class="mkt-media" data-site-block="features-media:ai">
       <img data-site-edit="features.ai.image" src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80" alt="Laptop showing a website design workspace" loading="lazy">

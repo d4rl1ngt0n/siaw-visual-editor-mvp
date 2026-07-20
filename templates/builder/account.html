@@ -1,0 +1,242 @@
+{% extends "builder/base_site.html" %}
+
+{% block title %}Account | Siaw{% endblock %}
+{% block body_class %}page-account{% endblock %}
+{% block meta_description %}Manage your Siaw account, plan, password, and deleted projects.{% endblock %}
+{% block site_footer %}{% endblock %}
+
+{% block scripts %}
+  {{ block.super }}
+  <script>
+    document.querySelectorAll("[data-purge-project]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const name = form.getAttribute("data-project-name") || "this project";
+        const confirmed = typeof siawConfirm === "function"
+          ? await siawConfirm("", {
+              danger: true,
+              confirmLabel: "Delete forever",
+              cancelLabel: "Cancel",
+              title: `Delete “${name}” forever?`,
+              message: "This permanently removes the project files. It cannot be undone.",
+              eyebrow: "Permanent delete",
+            })
+          : window.confirm(`Delete “${name}” forever? This cannot be undone.`);
+        if (confirmed) form.submit();
+      });
+    });
+  </script>
+{% endblock %}
+
+{% block content %}
+<main class="account-shell">
+  <div class="account-shell-inner wrap">
+    <header class="account-hero">
+      <div>
+        <p class="eyebrow">Account</p>
+        <h1>Settings</h1>
+        <p class="account-lead">Open your sites, update profile and password, and manage plan limits.</p>
+      </div>
+      <a class="btn-nav btn-nav-ghost" href="{% url 'builder:workspace' %}">Back to workspace</a>
+    </header>
+
+    <section class="account-usage" aria-label="Plan usage">
+      <div class="account-usage-card">
+        <p class="account-usage-label">Plan</p>
+        <p class="account-usage-value">{{ usage.plan_label }}</p>
+      </div>
+      <a class="account-usage-card account-usage-card-link" href="#projects">
+        <p class="account-usage-label">Projects</p>
+        <p class="account-usage-value">
+          {{ usage.projects_used }}{% if usage.projects_limit %}<span> / {{ usage.projects_limit }}</span>{% else %}<span> / ∞</span>{% endif %}
+        </p>
+        <p class="account-usage-hint">View and open sites</p>
+      </a>
+      <div class="account-usage-card">
+        <p class="account-usage-label">AI this month</p>
+        <p class="account-usage-value">
+          {{ usage.ai_used }}{% if usage.ai_limit %}<span> / {{ usage.ai_limit }}</span>{% else %}<span> / ∞</span>{% endif %}
+        </p>
+      </div>
+    </section>
+
+    <section class="account-panel account-projects-panel" id="projects" aria-label="Your projects">
+      <div class="account-panel-head">
+        <h2>Your projects</h2>
+        <a class="account-panel-link" href="{% url 'builder:ai_builder' %}">Create with AI</a>
+      </div>
+      {% if active_projects %}
+        <ul class="account-project-list">
+          {% for project in active_projects %}
+            <li>
+              <div>
+                <strong>{{ project.name }}</strong>
+                <small>Updated {{ project.updated_at|date:"d M Y, H:i" }}</small>
+              </div>
+              <div class="account-project-actions">
+                <a class="account-open" href="{% url 'builder:editor' project.id %}?mode=safe">Open editor</a>
+                <a class="account-open account-open-secondary" href="{% url 'builder:workspace' %}#projects">In workspace</a>
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="account-note account-note-empty">No active projects yet. <a href="{% url 'builder:workspace' %}">Create one in workspace</a>.</p>
+      {% endif %}
+    </section>
+
+    <section class="account-panel account-shopify-panel" id="shopify" aria-label="Shopify">
+      <div class="account-panel-head">
+        <h2>Shopify</h2>
+        {% if shopify_shops %}
+          <span class="account-panel-link">{{ shopify_shops|length }} connected</span>
+        {% endif %}
+      </div>
+      <p class="account-note">
+        Merchants normally install Siaw from Shopify Admin (Apps → Siaw), like other Shopify apps.
+        You can also link a store here to pull products into your Siaw account. The web builder still works for anyone, with or without Shopify.
+      </p>
+      {% if shopify_shops %}
+        <ul class="account-shopify-list">
+          {% for shop in shopify_shops %}
+            <li>
+              <div>
+                <strong>{{ shop.shop_name|default:shop.shop_domain }}</strong>
+                <small>{{ shop.shop_domain }}{% if shop.currency %} · {{ shop.currency }}{% endif %}</small>
+              </div>
+              <div class="account-shopify-actions">
+                <form method="post" action="{% url 'builder:shopify_build_site' shop.id %}">
+                  {% csrf_token %}
+                  <button type="submit" class="account-open">Build site from store</button>
+                </form>
+                <form method="post" action="{% url 'builder:shopify_disconnect' shop.id %}">
+                  {% csrf_token %}
+                  <button type="submit" class="account-purge">Disconnect</button>
+                </form>
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      {% if shopify_configured %}
+        <form method="post" action="{% url 'builder:shopify_connect' %}" class="account-form" novalidate>
+          {% csrf_token %}
+          <label class="account-field">
+            <span>{{ shopify_form.shop.label }}</span>
+            {{ shopify_form.shop }}
+          </label>
+          <button type="submit" class="account-submit">{{ shopify_shops|yesno:"Connect another store,Connect Shopify store" }}</button>
+        </form>
+      {% else %}
+        <p class="account-note account-note-empty">
+          Shopify connect is not configured on this server yet.
+          Add <code>SHOPIFY_API_KEY</code> and <code>SHOPIFY_API_SECRET</code> to enable it.
+        </p>
+      {% endif %}
+    </section>
+
+    <div class="account-grid">
+      <section class="account-panel">
+        <h2>Profile</h2>
+        <form method="post" class="account-form" novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="action" value="profile">
+          {% if profile_form.non_field_errors %}
+            <div class="account-errors" role="alert">
+              {% for error in profile_form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+            </div>
+          {% endif %}
+          <label class="account-field">
+            <span>Username</span>
+            {{ profile_form.username }}
+            {% for error in profile_form.username.errors %}<small class="error">{{ error }}</small>{% endfor %}
+          </label>
+          <label class="account-field">
+            <span>Email</span>
+            {{ profile_form.email }}
+            {% for error in profile_form.email.errors %}<small class="error">{{ error }}</small>{% endfor %}
+          </label>
+          <button type="submit" class="account-submit">Save profile</button>
+        </form>
+      </section>
+
+      <section class="account-panel">
+        <h2>Password</h2>
+        <form method="post" class="account-form" novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="action" value="password">
+          {% if password_form.non_field_errors %}
+            <div class="account-errors" role="alert">
+              {% for error in password_form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+            </div>
+          {% endif %}
+          <label class="account-field">
+            <span>Current password</span>
+            {{ password_form.old_password }}
+            {% for error in password_form.old_password.errors %}<small class="error">{{ error }}</small>{% endfor %}
+          </label>
+          <label class="account-field">
+            <span>New password</span>
+            {{ password_form.new_password1 }}
+            {% for error in password_form.new_password1.errors %}<small class="error">{{ error }}</small>{% endfor %}
+          </label>
+          <label class="account-field">
+            <span>Confirm new password</span>
+            {{ password_form.new_password2 }}
+            {% for error in password_form.new_password2.errors %}<small class="error">{{ error }}</small>{% endfor %}
+          </label>
+          <button type="submit" class="account-submit">Change password</button>
+        </form>
+      </section>
+
+      <section class="account-panel" id="plan">
+        <h2>Plan</h2>
+        <p class="account-note">Billing is illustrative for this MVP. Switching plans updates your limits immediately.</p>
+        <form method="post" class="account-form" novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="action" value="plan">
+          <label class="account-field">
+            <span>Select plan</span>
+            {{ plan_form.plan }}
+            {% for error in plan_form.plan.errors %}<small class="error">{{ error }}</small>{% endfor %}
+          </label>
+          <button type="submit" class="account-submit account-submit-secondary">Update plan</button>
+        </form>
+      </section>
+
+      <section class="account-panel">
+        <h2>Deleted projects</h2>
+        {% if deleted_projects %}
+          <ul class="account-deleted-list">
+            {% for project in deleted_projects %}
+              <li>
+                <div>
+                  <strong>{{ project.name }}</strong>
+                  <small>Deleted {{ project.deleted_at|date:"d M Y, H:i" }}</small>
+                </div>
+                <div class="account-deleted-actions">
+                  <form method="post" action="{% url 'builder:undelete_project' project.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="account-restore">Restore</button>
+                  </form>
+                  <form
+                    method="post"
+                    action="{% url 'builder:purge_project' project.id %}"
+                    data-purge-project
+                    data-project-name="{{ project.name }}"
+                  >
+                    {% csrf_token %}
+                    <button type="submit" class="account-purge">Delete forever</button>
+                  </form>
+                </div>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="account-note account-note-empty">No deleted projects yet. Soft-deleted sites show up here so you can restore them or delete them forever.</p>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+</main>
+{% endblock %}

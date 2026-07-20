@@ -29,6 +29,7 @@
   const linkManager = document.getElementById("linkManager");
   const slideshowManager = document.getElementById("slideshowManager");
   const responsiveManager = document.getElementById("responsiveManager");
+  const imageManager = document.getElementById("imageManager");
 
   let editor = null;
   let editorReady = false;
@@ -743,8 +744,38 @@
     return asset?.getSrc?.() || asset?.get?.("src") || "";
   }
 
-  function toEditorAssetUrl(src) {
+  function recoverExternalImageUrl(src) {
     const raw = String(src || "").trim();
+    if (!raw) return "";
+    // Shopify CDN paths wrongly hosted on ngrok / localhost after a bad rewrite.
+    const shopifyPath = raw.match(/\/s\/files\/\d+\/[^\s"'<>]+/i);
+    if (shopifyPath) {
+      const path = shopifyPath[0].replace(/&amp;/g, "&");
+      try {
+        const parsed = new URL(raw, window.location.origin);
+        const host = parsed.hostname.toLowerCase();
+        const isProjectHost =
+          host === window.location.hostname ||
+          host.endsWith(".ngrok-free.app") ||
+          host.endsWith(".ngrok.io") ||
+          host.endsWith(".ngrok.app");
+        if (isProjectHost || raw.startsWith("/s/files/")) {
+          return `https://cdn.shopify.com${path}`;
+        }
+      } catch (_error) {
+        if (raw.startsWith("/s/files/")) return `https://cdn.shopify.com${path}`;
+      }
+    }
+    return raw;
+  }
+
+  function isProjectFilesPath(pathname) {
+    return /^\/projects\/[0-9a-f-]{36}\/files\//i.test(String(pathname || ""));
+  }
+
+  function toEditorAssetUrl(src) {
+    const recovered = recoverExternalImageUrl(src);
+    const raw = String(recovered || "").trim();
     if (!raw) return "";
     if (/^(data:|blob:)/i.test(raw)) return raw;
     const prefix = loadedData?.projectFilePrefix || `/projects/${config.projectId}/files/`;
@@ -752,7 +783,8 @@
     try {
       if (/^(https?:)?\/\//i.test(raw)) {
         const absolute = new URL(raw, origin);
-        if (absolute.pathname.includes("/files/")) {
+        // Only remap our project file proxy, never Shopify `/s/files/...`.
+        if (isProjectFilesPath(absolute.pathname)) {
           return `${origin}${absolute.pathname}${absolute.search}`;
         }
         return absolute.href;
@@ -760,11 +792,14 @@
     } catch (_error) {
       /* keep falling through */
     }
-    if (raw.startsWith("/projects/") && raw.includes("/files/")) {
-      return `${origin}${raw}`;
+    if (isProjectFilesPath(raw) || (raw.startsWith("/projects/") && raw.includes("/files/"))) {
+      return `${origin}${raw.startsWith("/") ? raw : `/${raw}`}`;
     }
     if (raw.startsWith(prefix)) {
       return `${origin}${raw}`;
+    }
+    if (raw.startsWith("/s/files/")) {
+      return recoverExternalImageUrl(raw);
     }
     const relative = raw.replace(/^\.\//, "").replace(/^\/+/, "");
     return `${origin}${prefix}${relative.split("/").map(encodeURIComponent).join("/")}`;
@@ -1164,6 +1199,78 @@
     const css = String(cssText || "");
     if (css.includes("siaw-responsive-visibility")) return css;
     return `${css.trim()}\n\n${RESPONSIVE_VISIBILITY_CSS}\n`;
+  }
+
+  function resolveImageComponent(component) {
+    if (!component) return null;
+    if (component.get?.("type") === "image" || component.get?.("tagName") === "img") {
+      return component;
+    }
+    const nested = component.find?.("img") || [];
+    return nested[0] || null;
+  }
+
+  function renderImageManager(component) {
+    if (!imageManager) return;
+    const image = resolveImageComponent(component);
+    if (!image) {
+      imageManager.hidden = true;
+      imageManager.innerHTML = "";
+      return;
+    }
+    const attrs = image.getAttributes?.() || {};
+    const src = toEditorAssetUrl(attrs.src || "");
+    const alt = String(attrs.alt || "");
+    imageManager.hidden = false;
+    imageManager.innerHTML = `
+      <div class="image-manager-card">
+        <strong>Image</strong>
+        <p class="smart-help">Replace this image, or edit the source and alt text.</p>
+        <div class="image-manager-preview">${
+          src
+            ? `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" loading="lazy">`
+            : `<span class="image-manager-missing">No image source</span>`
+        }</div>
+        <label class="smart-field"><span>Image source</span>
+          <input type="text" data-image-src value="${escapeHtml(attrs.src || "")}" placeholder="https://… or images/photo.jpg">
+        </label>
+        <label class="smart-field"><span>Alt text</span>
+          <input type="text" data-image-alt value="${escapeHtml(alt)}" placeholder="Describe the image">
+        </label>
+        <div class="image-manager-actions">
+          <button type="button" class="primary-btn" data-image-swap>Replace image…</button>
+        </div>
+      </div>
+    `;
+    const srcInput = imageManager.querySelector("[data-image-src]");
+    const altInput = imageManager.querySelector("[data-image-alt]");
+    const applySrc = () => {
+      const next = toEditorAssetUrl(srcInput?.value || "");
+      image.addAttributes({ src: next });
+      markDirty();
+      const preview = imageManager.querySelector(".image-manager-preview img");
+      if (preview) preview.src = next;
+      else renderImageManager(image);
+    };
+    srcInput?.addEventListener("change", applySrc);
+    altInput?.addEventListener("change", () => {
+      image.addAttributes({ alt: String(altInput.value || "") });
+      markDirty();
+    });
+    imageManager.querySelector("[data-image-swap]")?.addEventListener("click", () => {
+      pendingSlideshowAction = { type: "swap", image };
+      openImageAssetPicker({
+        title: "Replace image",
+        onSelect: (picked) => {
+          pendingSlideshowAction = null;
+          const absolute = toEditorAssetUrl(picked);
+          image.addAttributes({ src: absolute });
+          if (srcInput) srcInput.value = absolute;
+          markDirty();
+          renderImageManager(image);
+        },
+      });
+    });
   }
 
   function renderSlideshowManager(component) {
@@ -3589,8 +3696,27 @@
             },
           });
         }
-      } catch (_error) {
-        // Keep default GrapesJS image traits if the local build differs.
+      } catch (error) {
+        console.warn("Could not extend GrapesJS image traits; Content image panel still works.", error);
+        editor.Commands.add("open-assets", {
+          run(ed, _sender, options = {}) {
+            const selected = options.target || ed.getSelected?.();
+            pendingSlideshowAction =
+              selected?.get?.("type") === "image" ? { type: "swap", image: selected } : null;
+            openImageAssetPicker({
+              title: "Swap image",
+              onSelect: (src) => {
+                const absolute = toEditorAssetUrl(src);
+                pendingSlideshowAction = null;
+                if (selected?.get?.("type") === "image") {
+                  selected.addAttributes({ src: absolute });
+                  markDirty();
+                  renderImageManager(selected);
+                }
+              },
+            });
+          },
+        });
       }
       registerBlocks(editor, data);
       try {
@@ -3651,12 +3777,14 @@
       editor.on("component:selected", (component) => {
         protectedHint.hidden = !componentIsInsideProtected(component);
         renderLinkManager(component);
+        renderImageManager(component);
         renderSlideshowManager(component);
         renderResponsiveManager(component);
       });
       editor.on("component:deselected", () => {
         protectedHint.hidden = true;
         renderLinkManager(null);
+        renderImageManager(null);
         renderSlideshowManager(null);
         renderResponsiveManager(null);
       });

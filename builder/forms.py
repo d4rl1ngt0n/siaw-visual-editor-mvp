@@ -1,6 +1,64 @@
 from django import forms
-from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
+from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm as DjangoPasswordChangeForm
+from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
+
+from .models import PLAN_CHOICES
+from .services.shopify.oauth import normalize_shop_domain
+
+
+class AccountProfileForm(forms.ModelForm):
+    class Meta:
+        model = User
+        fields = ("username", "email")
+        widgets = {
+            "username": forms.TextInput(attrs={"autocomplete": "username"}),
+            "email": forms.EmailInput(attrs={"autocomplete": "email"}),
+        }
+
+    def clean_email(self):
+        email = (self.cleaned_data.get("email") or "").strip().lower()
+        if not email:
+            raise forms.ValidationError("Email is required.")
+        qs = User.objects.filter(email__iexact=email).exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError("An account with this email already exists.")
+        return email
+
+
+class PasswordChangeForm(DjangoPasswordChangeForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in ("old_password", "new_password1", "new_password2"):
+            field = self.fields[name]
+            field.help_text = ""
+            field.widget.attrs.update(
+                {"autocomplete": "new-password" if "new" in name else "current-password"}
+            )
+
+
+class PlanChangeForm(forms.Form):
+    plan = forms.ChoiceField(choices=PLAN_CHOICES)
+
+
+class ShopifyConnectForm(forms.Form):
+    shop = forms.CharField(
+        max_length=255,
+        label="Store domain",
+        widget=forms.TextInput(
+            attrs={
+                "placeholder": "your-store.myshopify.com",
+                "autocomplete": "off",
+                "spellcheck": "false",
+            }
+        ),
+    )
+
+    def clean_shop(self):
+        try:
+            return normalize_shop_domain(self.cleaned_data.get("shop") or "")
+        except ValueError as exc:
+            raise forms.ValidationError(str(exc)) from exc
 
 
 class SignUpForm(UserCreationForm):

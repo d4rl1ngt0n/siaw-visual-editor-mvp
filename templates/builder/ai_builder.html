@@ -1,0 +1,109 @@
+{% extends "builder/base_site.html" %}
+{% load static %}
+
+{% block title %}AI Builder | Siaw{% endblock %}
+{% block body_class %}page-ai-builder{% endblock %}
+{% block meta_description %}Build a website with AI. Answer a few questions, draft a brief, then generate an editable site in Siaw.{% endblock %}
+{% block site_footer %}{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'builder/dashboard.css' %}?v=ai-stage-3">
+  <link rel="stylesheet" href="{% static 'builder/ai_generate.css' %}?v=gen-1">
+{% endblock %}
+
+{% block scripts %}
+  {{ block.super }}
+  <script src="{% static 'builder/dashboard.js' %}?v=ai-stage-3" defer></script>
+  <script src="{% static 'builder/ai_generate.js' %}?v=gen-1" defer></script>
+{% endblock %}
+
+{% block top_nav %}
+  <a class="nav-link-secondary" href="{% url 'builder:workspace' %}">Workspace</a>
+  <a class="nav-link-secondary" href="{% url 'builder:account' %}">Account</a>
+  <span class="nav-user">{{ user.get_username }}</span>
+  <a class="btn-nav btn-nav-ghost" href="{% url 'builder:logout' %}">Log out</a>
+{% endblock %}
+
+{% block content %}
+<main class="ai-build-page{% if start_mode == 'help' %} is-journey{% elif start_mode == 'compose' %} is-compose{% endif %}">
+  <div class="ai-build-atmosphere" aria-hidden="true"></div>
+  <div class="ai-build-shell wrap">
+    <header class="ai-build-hero" data-ai-page-hero>
+      <div class="ai-build-hero-copy">
+        <p class="eyebrow">Personal AI Builder</p>
+        <h1>Let's build your site{% if user.first_name %}, {{ user.first_name }}{% elif user.get_username %}, {{ user.get_username }}{% endif %}</h1>
+        <p class="ai-build-lead" data-ai-heading-lead>
+          {% if start_mode == "compose" %}
+            Advanced path: paste a finished prompt. For most sites, the guided brief is faster and more reliable.
+          {% else %}
+            A short guided setup shaped around your brand. One question at a time, then generate.
+          {% endif %}
+        </p>
+      </div>
+      <div class="ai-build-hero-actions">
+        {% if start_mode == "compose" %}
+        <a class="ai-build-back" href="{% url 'builder:ai_builder' %}?new=1">Use guided brief</a>
+        {% endif %}
+        <a class="ai-build-back" href="{% url 'builder:workspace' %}">Back to workspace</a>
+      </div>
+    </header>
+
+    {% if usage %}
+    <aside class="ai-build-usage" data-ai-page-usage aria-label="AI plan usage">
+      <span>{{ usage.plan_label }} plan</span>
+      <span class="{% if usage.ai_at_limit %}is-limit{% elif usage.ai_near_limit %}is-near{% endif %}">
+        {{ usage.ai_used }}{% if usage.ai_limit %}/{{ usage.ai_limit }}{% endif %} AI gens this month
+      </span>
+      {% if usage.ai_at_limit %}
+      <a href="{% url 'builder:account' %}?plan=pro#plan">Upgrade for more</a>
+      {% endif %}
+    </aside>
+    {% endif %}
+
+    <section class="ai-build-stage" aria-label="AI website builder">
+      {% include "builder/partials/ai_builder_flow.html" with standalone=True start_mode=start_mode %}
+    </section>
+  </div>
+
+  <div class="generate-overlay" data-generate-overlay hidden aria-hidden="true" role="status" aria-live="polite">
+    <div class="generate-overlay-card">
+      <div class="generate-build-stage" aria-hidden="true">
+        <div class="generate-blocks">
+          <span class="generate-block"></span>
+          <span class="generate-block"></span>
+          <span class="generate-block"></span>
+          <span class="generate-block"></span>
+        </div>
+        <div class="generate-browser">
+          <div class="generate-browser-bar"><i></i><i></i><i></i></div>
+          <div class="generate-browser-body">
+            <div class="generate-skel is-hero"></div>
+            <div class="generate-skel is-wide"></div>
+            <div class="generate-skel is-mid"></div>
+            <div class="generate-skel is-short"></div>
+          </div>
+        </div>
+      </div>
+      <h2 data-generate-title>Building your website</h2>
+      <p class="generate-lead" data-generate-status>Reading your prompt…</p>
+      <div class="generate-meter">
+        <div class="generate-meter-top">
+          <strong data-generate-pct>0%</strong>
+          <span>This can take a few minutes</span>
+        </div>
+        <div class="generate-track" aria-hidden="true">
+          <span class="generate-fill" data-generate-fill></span>
+        </div>
+      </div>
+      <ul class="generate-stages">
+        <li data-generate-stage>Prompt understood</li>
+        <li data-generate-stage>Structure planned</li>
+        <li data-generate-stage>Pages and copy drafted</li>
+        <li data-generate-stage>Design polished</li>
+        <li data-generate-stage>Opening in the editor</li>
+      </ul>
+      <p class="generate-note">Keep this tab open. We will take you to the editor when it is ready.</p>
+    </div>
+  </div>
+</main>
+{% endblock %}

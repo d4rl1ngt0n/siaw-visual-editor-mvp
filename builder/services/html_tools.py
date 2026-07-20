@@ -612,8 +612,25 @@ def ensure_override_link(html_text: str, href: str) -> str:
     return link + "\n" + html_text
 
 
+def unwrap_editor_body_html(fragment: str) -> str:
+    """Strip accidental <html>/<body> wrappers GrapesJS sometimes returns on save."""
+    text = (fragment or "").strip()
+    if not text:
+        return ""
+    html_match = re.search(r"<html\b[^>]*>(.*)</html\s*>", text, flags=re.I | re.DOTALL)
+    if html_match:
+        text = html_match.group(1).strip()
+    body_match = BODY_RE.search(text)
+    if body_match:
+        text = body_match.group(2).strip()
+    # Drop leftover empty outer body shells from prior corrupted saves.
+    text = re.sub(r"^<body\b[^>]*>\s*", "", text, count=1, flags=re.I)
+    text = re.sub(r"\s*</body\s*>\s*$", "", text, count=1, flags=re.I)
+    return text.strip()
+
+
 def merge_editor_body(current_html: str, edited_body: str, override_href: str) -> str:
-    edited_body = strip_script_tags(edited_body).strip()
+    edited_body = unwrap_editor_body_html(strip_script_tags(edited_body))
     match = BODY_RE.search(current_html)
     if not match:
         merged = edited_body

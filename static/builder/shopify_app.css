@@ -1,0 +1,213 @@
+:root {
+  --bg: #f6f6f7;
+  --surface: #ffffff;
+  --ink: #202223;
+  --muted: #6d7175;
+  --line: #e1e3e5;
+  --accent: #008060;
+  --accent-ink: #004c3f;
+  --display: "Syne", "DM Sans", sans-serif;
+  --body: "DM Sans", sans-serif;
+  --radius: 12px;
+  --space: 8px;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body.siaw-shopify-app {
+  font-family: var(--body);
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 480px at 10% -10%, rgba(0, 128, 96, 0.10), transparent 55%),
+    linear-gradient(180deg, #eef1f2 0%, var(--bg) 40%, #fafbfb 100%);
+}
+
+.siaw-shop-shell {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: calc(var(--space) * 4) calc(var(--space) * 3) calc(var(--space) * 6);
+  display: grid;
+  gap: calc(var(--space) * 2);
+}
+
+.siaw-shop-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: calc(var(--space) * 2);
+}
+
+.siaw-shop-brand {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.siaw-shop-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 22px;
+}
+
+.siaw-shop-eyebrow {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.siaw-shop-header h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(28px, 4vw, 36px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  max-width: 16ch;
+}
+
+.siaw-shop-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.siaw-shop-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: calc(var(--space) * 3);
+  box-shadow: 0 1px 0 rgba(32, 34, 35, 0.04);
+}
+
+.siaw-shop-card h2 {
+  margin: 0 0 8px;
+  font-family: var(--display);
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.siaw-shop-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: 15px;
+}
+
+.siaw-shop-steps {
+  margin: 16px 0 0;
+  padding-left: 1.2rem;
+  color: var(--ink);
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.siaw-shop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.siaw-shop-btn {
+  appearance: none;
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 16px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 160ms ease-out, transform 160ms ease-out;
+}
+
+.siaw-shop-btn:hover { background: var(--accent-ink); }
+.siaw-shop-btn:active { transform: translateY(1px); }
+.siaw-shop-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.siaw-shop-btn-secondary {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.siaw-shop-btn-secondary:hover {
+  background: #f1f2f3;
+  color: var(--ink);
+}
+
+.siaw-shop-status {
+  margin-top: 14px !important;
+  font-size: 13px !important;
+  font-weight: 600;
+  min-height: 1.2em;
+}
+
+.siaw-shop-status.is-error { color: #d72c0d; }
+.siaw-shop-status.is-ok { color: var(--accent-ink); }
+
+.siaw-shop-products {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.siaw-shop-products li {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.siaw-shop-products li:first-child { border-top: 0; padding-top: 0; }
+
+.siaw-shop-products img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #f1f2f3;
+}
+
+.siaw-shop-products strong {
+  display: block;
+  font-size: 14px;
+}
+
+.siaw-shop-products small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .siaw-shop-header h1 { max-width: none; }
+  .siaw-shop-actions { flex-direction: column; }
+  .siaw-shop-btn { width: 100%; text-align: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .siaw-shop-btn { transition: none; }
+}

@@ -26,10 +26,34 @@ PROJECT_FILE_URL_RE = re.compile(
     r"""/projects/[0-9a-f-]{36}/files/(?P<path>[^?\s#'"]+)""",
     re.IGNORECASE,
 )
+# Dead ngrok / storefront proxies that wrap Shopify CDN paths.
+PROXY_SHOPIFY_FILES_RE = re.compile(
+    r"""https?://(?!cdn\.shopify\.com)[^/\"'\s]+(/s/files/\d+/[^\s\"'<>]+)""",
+    re.IGNORECASE,
+)
+RELATIVE_SHOPIFY_FILES_RE = re.compile(
+    r"""(?<=["'(])(/s/files/\d+/[^\s\"'<>)]+)""",
+    re.IGNORECASE,
+)
 CSS_IMPORT_RE = re.compile(
     r"""@import\s+(?:url\(\s*)?(?P<quote>['"]?)(?P<value>[^'")\s]+)(?P=quote)\s*\)?\s*;""",
     re.IGNORECASE,
 )
+
+
+def recover_shopify_media_urls(value: str) -> str:
+    """Map broken Shopify file proxies back to the public CDN host.
+
+    Codex / storefront imports often embed ngrok or relative `/s/files/...`
+    URLs. The editor previously rewrote any path containing `/files/` onto
+    localhost, which 404s. Prefer the real Shopify CDN.
+    """
+    text = value or ""
+    if not text:
+        return text
+    text = PROXY_SHOPIFY_FILES_RE.sub(r"https://cdn.shopify.com\1", text)
+    text = RELATIVE_SHOPIFY_FILES_RE.sub(r"https://cdn.shopify.com\1", text)
+    return text
 
 
 def _is_external(value: str) -> bool:
@@ -351,6 +375,7 @@ def materialize_entry_for_visual_editor(
     project_data: dict | None = None,
 ) -> dict:
     """Prepare HTML + CSS payloads so Safe Edit renders like the live page."""
+    html_text = recover_shopify_media_urls(html_text or "")
     discovered = collect_stylesheet_refs(
         html_text,
         relative_html_path=entry_file,
@@ -376,13 +401,25 @@ def materialize_entry_for_visual_editor(
     )
     absolute_project_data = None
     if isinstance(project_data, dict):
-        absolute_project_data = absolutize_data_urls(
+        recovered_data = absolutize_data_urls(
             project_data,
             source_root=source_root,
             entry_file=entry_file,
             project_file_prefix=project_file_prefix,
             origin=origin,
         )
+
+        def _recover_tree(value):
+            if isinstance(value, str):
+                return recover_shopify_media_urls(value)
+            if isinstance(value, list):
+                return [_recover_tree(item) for item in value]
+            if isinstance(value, dict):
+                return {key: _recover_tree(item) for key, item in value.items()}
+            return value
+
+        absolute_project_data = _recover_tree(recovered_data)
+
     return {
         "html": absolute_html,
         "inlineStyles": inline_css,

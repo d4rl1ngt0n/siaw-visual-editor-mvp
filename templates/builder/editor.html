@@ -7,7 +7,7 @@
   <title>{{ project.name }} | Siaw Visual Editor</title>
   <link rel="stylesheet" href="{% static 'vendor/grapesjs/grapes.min.css' %}">
   <link rel="stylesheet" href="{% static 'builder/ui-dialog.css' %}">
-  <link rel="stylesheet" href="{% static 'builder/editor.css' %}?v=slideshow-upload-4">
+  <link rel="stylesheet" href="{% static 'builder/editor.css' %}?v=image-fix-1">
 </head>
 <body>
   <header class="editor-topbar">
@@ -140,6 +140,7 @@
       <div id="traitsPanel" class="right-content active">
         <div class="panel-intro"><strong>Element settings</strong><span>Select an item on the website.</span></div>
         <div id="linkManager" class="link-manager" hidden></div>
+        <div id="imageManager" class="image-manager" hidden></div>
         <div id="slideshowManager" class="slideshow-manager" hidden></div>
         <div id="responsiveManager" class="responsive-manager" hidden></div>
         <div id="traits"></div>
@@ -175,6 +176,6 @@
   {{ editor_config|json_script:"editor-config" }}
   <script src="{% static 'vendor/grapesjs/grapes.min.js' %}"></script>
   <script src="{% static 'builder/ui-dialog.js' %}"></script>
-  <script src="{% static 'builder/editor.js' %}?v=slideshow-upload-4"></script>
+  <script src="{% static 'builder/editor.js' %}?v=image-fix-1"></script>
 </body>
 </html>

@@ -1,0 +1,265 @@
+{# Shared create + project tools. Expects: form, generate_form, ai_status, active_create_tab, project_rows, usage #}
+<div class="workspace-grid{% if detailed %} workspace-grid-detailed{% endif %}">
+  <article class="upload-card">
+    <div class="upload-card-scroll">
+      <div class="create-tabs" role="tablist" aria-label="Create website">
+        <button type="button" class="create-tab{% if active_create_tab != 'import' and active_create_tab != 'shopify' %} is-active{% endif %}" data-create-tab="ai" role="tab" aria-selected="{% if active_create_tab != 'import' and active_create_tab != 'shopify' %}true{% else %}false{% endif %}">AI Builder</button>
+        <button type="button" class="create-tab{% if active_create_tab == 'import' %} is-active{% endif %}" data-create-tab="import" role="tab" aria-selected="{% if active_create_tab == 'import' %}true{% else %}false{% endif %}">Import</button>
+        <button type="button" class="create-tab{% if active_create_tab == 'shopify' %} is-active{% endif %}" data-create-tab="shopify" role="tab" aria-selected="{% if active_create_tab == 'shopify' %}true{% else %}false{% endif %}">Shopify</button>
+      </div>
+
+      <div class="create-panel{% if active_create_tab == 'import' or active_create_tab == 'shopify' %} is-hidden{% endif %}" data-create-panel="ai">
+        <div class="ai-launch">
+          <div class="card-heading">
+            <span class="step">01</span>
+            <div>
+              <h3>Create with AI</h3>
+              <p>Open the creative brief wizard, answer a few questions, then generate a full editable site.</p>
+            </div>
+          </div>
+          <ul class="ai-launch-points">
+            <li>Answer a few short questions</li>
+            <li>Watch the brief come together</li>
+            <li>Generate and edit in Safe Edit</li>
+          </ul>
+          {% if user.is_authenticated %}
+            <a class="primary-btn" href="{% url 'builder:ai_builder' %}?new=1">Open AI Builder</a>
+            <p class="ai-launch-alt">
+              <a href="{% url 'builder:ai_builder_prompt' %}">Advanced: paste a prompt</a>
+            </p>
+          {% else %}
+            <p class="ai-hint">Log in to open your personal AI Builder. Your answers stay with your account.</p>
+            <div class="auth-continue-actions">
+              <a class="primary-btn" href="{% url 'builder:login' %}?next={% url 'builder:ai_builder' %}">Log in to build</a>
+              <a class="btn btn-ghost" href="{% url 'builder:signup' %}?next={% url 'builder:ai_builder' %}">Sign up</a>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="create-panel{% if active_create_tab != 'shopify' %} is-hidden{% endif %}" data-create-panel="shopify">
+        <div class="ai-launch">
+          <div class="card-heading">
+            <span class="step">02</span>
+            <div>
+              <h3>Build from Shopify</h3>
+              <p>Merchants install Siaw from Shopify Admin. Link a store here, or open App Home after install, then generate a site from the catalog.</p>
+            </div>
+          </div>
+          {% if user.is_authenticated and shopify_shops %}
+            <ul class="ai-launch-points">
+              {% for shop in shopify_shops %}
+                <li>{{ shop.shop_name|default:shop.shop_domain }}</li>
+              {% endfor %}
+            </ul>
+            {% with shop=shopify_shops.0 %}
+              <form method="post" action="{% url 'builder:shopify_build_site' shop.id %}">
+                {% csrf_token %}
+                <button type="submit" class="primary-btn">Build site from {{ shop.shop_name|default:shop.shop_domain }}</button>
+              </form>
+            {% endwith %}
+            <p class="ai-launch-alt">
+              <a href="{% url 'builder:account' %}#shopify">Manage connected stores</a>
+            </p>
+          {% elif user.is_authenticated and shopify_configured %}
+            <ul class="ai-launch-points">
+              <li>Authorize read access to products</li>
+              <li>Seed an AI brief from your catalog</li>
+              <li>Edit and export in Safe Edit</li>
+            </ul>
+            <a class="primary-btn" href="{% url 'builder:account' %}#shopify">Connect Shopify store</a>
+          {% elif user.is_authenticated %}
+            <p class="ai-hint">Shopify connect is not configured on this server yet. You can still create any site with AI Builder.</p>
+            <a class="primary-btn" href="{% url 'builder:ai_builder' %}?new=1">Open AI Builder</a>
+          {% else %}
+            <p class="ai-hint">Log in to connect a Shopify store and build from your catalog.</p>
+            <div class="auth-continue-actions">
+              <a class="primary-btn" href="{% url 'builder:login' %}?next={% url 'builder:workspace' %}">Log in</a>
+              <a class="btn btn-ghost" href="{% url 'builder:signup' %}?next={% url 'builder:workspace' %}">Sign up</a>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="create-panel{% if active_create_tab != 'import' %} is-hidden{% endif %}" data-create-panel="import">
+        <div class="card-heading">
+          <span class="step">03</span>
+          <div>
+            <h3>Import a project</h3>
+            <p>Choose a folder, ZIP, or HTML file. Name it, then open the editor.</p>
+          </div>
+        </div>
+        <form method="post" action="{% url 'builder:upload_project' %}" enctype="multipart/form-data" class="upload-form" id="uploadForm">
+          {% csrf_token %}
+          {{ form.entry_file }}
+          <label>
+            <span>{{ form.name.label }}</span>
+            {{ form.name }}
+            {% for error in form.name.errors %}<small class="error">{{ error }}</small>{% endfor %}
+          </label>
+
+          <div class="upload-pickers">
+            <label class="file-drop">
+              <span class="file-icon">FILE</span>
+              <span><strong>Select ZIP or HTML file</strong><small>Maximum 25 MB after packing.</small></span>
+              {{ form.website_zip }}
+            </label>
+            <button type="button" class="folder-btn" data-pick-folder>Or choose folder</button>
+            <input type="file" data-folder-input webkitdirectory multiple hidden>
+          </div>
+          {% for error in form.website_zip.errors %}<small class="error">{{ error }}</small>{% endfor %}
+          {% if form.non_field_errors %}
+            {% for error in form.non_field_errors %}<small class="error">{{ error }}</small>{% endfor %}
+          {% endif %}
+
+          <div class="upload-preview" data-upload-preview hidden>
+            <div class="upload-preview-bar">
+              <div>
+                <p class="upload-preview-label">Ready to import</p>
+                <p class="upload-preview-meta" data-preview-meta></p>
+              </div>
+              <button type="button" class="preview-clear" data-preview-clear>Clear</button>
+            </div>
+            <div class="upload-preview-frame-wrap" data-preview-frame-wrap>
+              <iframe class="upload-preview-frame" data-preview-frame title="Selected website preview" sandbox></iframe>
+            </div>
+            <pre class="upload-preview-code" data-preview-code hidden></pre>
+            <p class="upload-preview-status" data-preview-status></p>
+            <ul class="upload-preview-files" data-preview-files></ul>
+          </div>
+
+          {% if user.is_authenticated %}
+            <button type="submit" class="primary-btn">Import and open editor</button>
+          {% else %}
+            <p class="ai-hint">Your selected file is kept while you log in or sign up.</p>
+            <div class="auth-continue-actions">
+              <a class="primary-btn" data-auth-continue="import" href="{% url 'builder:login' %}?next={% url 'builder:workspace' %}">Log in to import</a>
+              <a class="btn btn-ghost" data-auth-continue="import" href="{% url 'builder:signup' %}?next={% url 'builder:workspace' %}">Sign up</a>
+            </div>
+          {% endif %}
+        </form>
+      </div>
+    </div>
+  </article>
+
+  <section class="projects-panel{% if detailed %} projects-panel-detailed{% endif %}" id="projects">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Your projects</p>
+        <h3>{% if detailed %}Sites in your account{% else %}Continue editing{% endif %}</h3>
+        {% if usage and not detailed %}
+        <p class="usage-strip">
+          {{ usage.plan_label }} plan ·
+          {{ usage.projects_used }}{% if usage.projects_limit %}/{{ usage.projects_limit }}{% endif %} projects ·
+          {{ usage.ai_used }}{% if usage.ai_limit %}/{{ usage.ai_limit }}{% endif %} AI gens
+          <a href="{% url 'builder:account' %}">Manage</a>
+        </p>
+        {% endif %}
+      </div>
+      <span class="project-count">{{ project_rows|length }}</span>
+    </div>
+    <div class="project-list{% if detailed %} project-list-rows{% endif %}">
+      {% for row in project_rows %}
+        {% with project=row.project thumb=row.thumbnail %}
+        {% if detailed %}
+        <article class="project-row">
+          <div class="project-row-preview" data-thumb-kind="{{ thumb.kind }}">
+            {% if thumb.kind == "image" %}
+              <img src="{{ thumb.src }}" alt="" loading="lazy">
+            {% elif thumb.kind == "iframe" %}
+              <iframe src="{{ thumb.src }}" title="" loading="lazy" tabindex="-1" sandbox="allow-same-origin allow-scripts"></iframe>
+            {% else %}
+              <span>WEB</span>
+            {% endif %}
+          </div>
+          <div class="project-row-copy">
+            <h4>{{ project.name }}</h4>
+            <p>
+              <span>{{ project.entry_file }}</span>
+              <span aria-hidden="true">·</span>
+              <span>Updated {{ project.updated_at|date:"d M Y, H:i" }}</span>
+            </p>
+          </div>
+          <div class="project-row-actions">
+            <a href="{% url 'builder:preview' project.id %}" target="_blank" class="project-row-link">Preview</a>
+            <form method="post" action="{% url 'builder:delete_project' project.id %}" class="delete-form" data-delete-project data-project-name="{{ project.name }}">
+              {% csrf_token %}
+              <button type="submit" class="project-row-link project-row-danger">Delete</button>
+            </form>
+            <a href="{% url 'builder:editor' project.id %}?mode=safe" class="project-row-open">Open</a>
+          </div>
+        </article>
+        {% else %}
+        <article class="project-card">
+          <div class="project-preview" data-thumb-kind="{{ thumb.kind }}">
+            {% if thumb.kind == "image" %}
+              <img src="{{ thumb.src }}" alt="{{ project.name }} preview" loading="lazy">
+            {% elif thumb.kind == "iframe" %}
+              <iframe src="{{ thumb.src }}" title="{{ project.name }} preview" loading="lazy" tabindex="-1" sandbox="allow-same-origin allow-scripts"></iframe>
+            {% else %}
+              <span>WEB</span>
+            {% endif %}
+          </div>
+          <div class="project-info">
+            <h4>{{ project.name }}</h4>
+            <p>{{ project.entry_file }}</p>
+            <small>Updated {{ project.updated_at|date:"d M Y, H:i" }}</small>
+          </div>
+          <div class="project-actions">
+            <a href="{% url 'builder:editor' project.id %}?mode=safe" class="open-btn">Open editor</a>
+            <a href="{% url 'builder:preview' project.id %}" target="_blank" class="text-btn">Preview</a>
+            <form method="post" action="{% url 'builder:delete_project' project.id %}" class="delete-form" data-delete-project data-project-name="{{ project.name }}">
+              {% csrf_token %}
+              <button type="submit" class="delete-btn">Delete</button>
+            </form>
+          </div>
+        </article>
+        {% endif %}
+        {% endwith %}
+      {% empty %}
+        <div class="side-import" data-side-import>
+          <div class="empty-state" data-empty-drop tabindex="0" role="button" aria-label="Drop or choose a website to import">
+            <strong>No website projects yet.</strong>
+            <p>Open AI Builder to create one, or drop a folder, ZIP, or HTML file here.</p>
+            <div class="empty-state-actions">
+              {% if user.is_authenticated %}
+              <a class="empty-pick-btn" href="{% url 'builder:ai_builder' %}?new=1">Open AI Builder</a>
+              {% endif %}
+              <button type="button" class="empty-pick-btn" data-empty-pick-file>Choose file</button>
+              <button type="button" class="empty-pick-btn empty-pick-btn-secondary" data-empty-pick-folder>Choose folder</button>
+            </div>
+          </div>
+
+          <div class="side-import-ready" data-side-ready hidden>
+            <div class="side-import-ready-bar">
+              <div>
+                <p class="upload-preview-label">Ready to import</p>
+                <p class="upload-preview-meta" data-side-preview-meta></p>
+              </div>
+              <button type="button" class="preview-clear" data-side-clear>Clear</button>
+            </div>
+            <label class="side-import-name">
+              <span>Project name</span>
+              <input type="text" data-side-name placeholder="e.g. My website" autocomplete="off">
+            </label>
+            <div class="upload-preview-frame-wrap" data-side-preview-frame-wrap>
+              <iframe class="upload-preview-frame" data-side-preview-frame title="Selected website preview" sandbox></iframe>
+            </div>
+            <pre class="upload-preview-code" data-side-preview-code hidden></pre>
+            <p class="upload-preview-status" data-side-preview-status></p>
+            <ul class="upload-preview-files" data-side-preview-files></ul>
+            {% if user.is_authenticated %}
+              <button type="submit" form="uploadForm" class="primary-btn">Import and open editor</button>
+            {% else %}
+              <p class="ai-hint">Your selected file is kept while you log in or sign up.</p>
+              <div class="auth-continue-actions">
+                <a class="primary-btn" data-auth-continue="import" href="{% url 'builder:login' %}?next={% url 'builder:workspace' %}">Log in to import</a>
+                <a class="btn btn-ghost" data-auth-continue="import" href="{% url 'builder:signup' %}?next={% url 'builder:workspace' %}">Sign up</a>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+</div>

@@ -1,0 +1,65 @@
+{% extends "builder/base_site.html" %}
+{% load static %}
+
+{% block title %}Workspace | Siaw{% endblock %}
+{% block body_class %}page-workspace{% endblock %}
+{% block meta_description %}Your Siaw workspace: create with AI, import sites, and continue editing your projects.{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'builder/dashboard.css' %}?v=ai-stage-3">
+{% endblock %}
+
+{% block scripts %}
+  {{ block.super }}
+  <script src="{% static 'builder/dashboard.js' %}?v=ai-stage-3" defer></script>
+{% endblock %}
+
+{% block content %}
+<main class="personal-workspace" id="workspace">
+  <section class="personal-workspace-hero wrap">
+    <div class="personal-workspace-hero-copy">
+      <p class="eyebrow">Workspace</p>
+      <h1>{{ user.get_username }}</h1>
+      <p class="personal-workspace-lead">Create, import, and open sites saved to your account.</p>
+    </div>
+    {% if usage %}
+    <aside class="personal-workspace-stats" aria-label="Plan usage">
+      <a class="personal-stat" href="{% url 'builder:account' %}#plan">
+        <span>Plan</span>
+        <strong>{{ usage.plan_label }}</strong>
+      </a>
+      <a class="personal-stat{% if usage.projects_at_limit %} is-limit{% elif usage.projects_near_limit %} is-near{% endif %}" href="#projects">
+        <span>Projects</span>
+        <strong>{{ usage.projects_used }}{% if usage.projects_limit %}<small>/{{ usage.projects_limit }}</small>{% endif %}</strong>
+      </a>
+      <a class="personal-stat{% if usage.ai_at_limit %} is-limit{% elif usage.ai_near_limit %} is-near{% endif %}" href="{% url 'builder:account' %}#plan">
+        <span>AI gens</span>
+        <strong>{{ usage.ai_used }}{% if usage.ai_limit %}<small>/{{ usage.ai_limit }}</small>{% endif %}</strong>
+      </a>
+    </aside>
+    {% endif %}
+  </section>
+
+  {% if usage.needs_upgrade %}
+  <aside class="plan-limit-banner wrap" role="status">
+    <div>
+      <strong>Plan limit reached</strong>
+      <p>
+        {% if usage.projects_at_limit and usage.ai_at_limit %}
+          You are out of active projects and AI generations on {{ usage.plan_label }}.
+        {% elif usage.projects_at_limit %}
+          You are using all {{ usage.projects_limit }} active projects on {{ usage.plan_label }}.
+        {% else %}
+          You used all {{ usage.ai_limit }} AI generations this month on {{ usage.plan_label }}.
+        {% endif %}
+      </p>
+    </div>
+    <a class="btn btn-primary" href="{% url 'builder:account' %}?plan=pro#plan">Upgrade plan</a>
+  </aside>
+  {% endif %}
+
+  <section class="personal-workspace-body wrap" aria-label="Create and manage sites">
+    {% include "builder/partials/workspace_tools.html" with detailed=True %}
+  </section>
+</main>
+{% endblock %}

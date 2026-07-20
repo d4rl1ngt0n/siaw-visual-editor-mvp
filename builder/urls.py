@@ -1,20 +1,78 @@
 from django.urls import path
 
 from . import views
+from . import views_shopify
 
 app_name = "builder"
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("workspace/", views.workspace, name="workspace"),
+    path("workspace/ai/", views.ai_workspace, name="ai_builder"),
+    path("workspace/ai/prompt/", views.ai_builder_compose, name="ai_builder_prompt"),
+    path("workspace/ai/<uuid:brief_id>/", views.ai_wizard, name="ai_wizard"),
+    path("workspace/ai/<uuid:brief_id>/autosave/", views.ai_autosave, name="ai_autosave"),
+    path("workspace/ai/<uuid:brief_id>/assets/", views.ai_upload_asset, name="ai_upload_asset"),
+    path(
+        "workspace/ai/<uuid:brief_id>/assets/<int:asset_id>/",
+        views.ai_asset_detail,
+        name="ai_asset_detail",
+    ),
+    path(
+        "workspace/ai/<uuid:brief_id>/assets/<int:asset_id>/file/",
+        views.ai_asset_file,
+        name="ai_asset_file",
+    ),
+    path("workspace/ai/<uuid:brief_id>/review/", views.ai_review, name="ai_review"),
+    path(
+        "workspace/ai/<uuid:brief_id>/build-status/",
+        views.ai_build_status,
+        name="ai_build_status",
+    ),
+    path("workspace/ai/<uuid:brief_id>/generate/", views.ai_generate, name="ai_generate"),
+
     path("pricing/", views.pricing, name="pricing"),
     path("site-edit/save/", views.save_site_edit, name="save_site_edit"),
     path("site-edit/upload-image/", views.upload_site_edit_image, name="upload_site_edit_image"),
     path("login/", views.UserLoginView.as_view(), name="login"),
     path("signup/", views.signup, name="signup"),
     path("logout/", views.logout_view, name="logout"),
+    path("account/", views.account_settings, name="account"),
+    path("shopify/app/", views_shopify.shopify_app, name="shopify_app"),
+    path("shopify/auth/", views_shopify.shopify_auth, name="shopify_auth"),
+    path("shopify/continue/", views_shopify.shopify_continue, name="shopify_continue"),
+    path("shopify/session/", views_shopify.shopify_session, name="shopify_session"),
+    path("shopify/app/products/", views_shopify.shopify_app_products, name="shopify_app_products"),
+    path("shopify/app/build/", views_shopify.shopify_app_build, name="shopify_app_build"),
+    path("shopify/connect/", views_shopify.shopify_connect, name="shopify_connect"),
+    path("shopify/callback/", views_shopify.shopify_callback, name="shopify_callback"),
+    path("shopify/webhook/", views_shopify.shopify_webhook, name="shopify_webhook"),
+    path(
+        "shopify/<uuid:shop_id>/disconnect/",
+        views_shopify.shopify_disconnect,
+        name="shopify_disconnect",
+    ),
+    path(
+        "shopify/<uuid:shop_id>/link/",
+        views_shopify.shopify_link_account,
+        name="shopify_link_account",
+    ),
+    path(
+        "shopify/<uuid:shop_id>/products/",
+        views_shopify.shopify_products,
+        name="shopify_products",
+    ),
+    path(
+        "shopify/<uuid:shop_id>/build/",
+        views_shopify.shopify_build_site,
+        name="shopify_build_site",
+    ),
     path("projects/generate/", views.generate_project, name="generate_project"),
+    path("projects/draft-prompt/", views.draft_prompt, name="draft_prompt"),
     path("projects/upload/", views.upload_project, name="upload_project"),
     path("projects/<uuid:project_id>/delete/", views.delete_project, name="delete_project"),
+    path("projects/<uuid:project_id>/undelete/", views.undelete_project, name="undelete_project"),
+    path("projects/<uuid:project_id>/purge/", views.purge_project, name="purge_project"),
     path("projects/<uuid:project_id>/editor/", views.editor, name="editor"),
     path("projects/<uuid:project_id>/data/", views.editor_data, name="editor_data"),
     path("projects/<uuid:project_id>/save/", views.save_project, name="save_project"),

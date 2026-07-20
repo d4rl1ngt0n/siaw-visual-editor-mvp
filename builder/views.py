@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -11,24 +12,61 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
+logger = logging.getLogger(__name__)
+
 from django.contrib import messages
 from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
+from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
 from django.core.exceptions import ValidationError
 from django.core.files import File
+from django.core.validators import URLValidator
+from django.db import connection, close_old_connections
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.text import get_valid_filename
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from django.conf import settings as django_settings
 
-from .forms import LoginForm, SignUpForm, WebsiteGenerateForm, WebsiteUploadForm
-from .models import WebsiteProject
+from .forms import (
+    AccountProfileForm,
+    LoginForm,
+    PasswordChangeForm,
+    PlanChangeForm,
+    ShopifyConnectForm,
+    SignUpForm,
+    WebsiteGenerateForm,
+    WebsiteUploadForm,
+)
+from .models import (
+    AIWebsiteAsset,
+    AIWebsiteBrief,
+    PLAN_FREE,
+    PLAN_PRO,
+    PLAN_STUDIO,
+    ShopifyShop,
+    WebsiteProject,
+)
+from .services.shopify.config import shopify_configured
+from .services.plans import (
+    assert_can_create_project,
+    assert_can_generate_ai,
+    ensure_profile,
+    record_ai_generation,
+    usage_summary,
+)
+from .services.project_access import (
+    attach_runtime_access_cookie,
+    issue_runtime_access_token,
+    request_can_serve_runtime_path,
+    request_has_runtime_access,
+)
 from .services.archive import (
     StylesheetParser,
     import_website_zip,
@@ -37,7 +75,27 @@ from .services.archive import (
     list_source_files,
     safe_project_path,
 )
-from .services.ai_builder import ai_configured, ai_status, create_website_from_prompt
+from .services.ai_builder import (
+    ai_configured,
+    ai_status,
+    create_website_from_prompt,
+    draft_prompt_from_answers,
+)
+from .services.ai_prefetch import (
+    brief_can_prefetch,
+    brief_is_buildable,
+    claim_prefetch_project,
+    maybe_start_prefetch,
+    prefetch_status_payload,
+    refresh_master_prompt,
+)
+from .services.ai_website import (
+    generate_website_from_brief,
+    identify_missing_information,
+    produce_generation_spec,
+    recommend_homepage_sections,
+    recommend_sitemap,
+)
 from .services.site_edit import apply_site_edits, save_site_edit_image, site_edit_allowed
 from .services.editor_assets import materialize_entry_for_visual_editor
 from .services.route_capture import (
@@ -147,31 +205,43 @@ def _isolated_runtime_url(request, project: WebsiteProject) -> str:
     entry HTML is rewritten to relative asset paths.
     """
     version = int(project.updated_at.timestamp()) if getattr(project, "updated_at", None) else 0
+    access = ""
+    if request.user.is_authenticated:
+        access = f"&access={issue_runtime_access_token(project, request.user)}"
     if _uses_local_runtime_hosts(request):
         port = request.get_port()
         host = f"{project.id}.runtime.localhost"
         authority = f"{host}:{port}" if port else host
-        return f"{request.scheme}://{authority}/?v={version}"
+        return f"{request.scheme}://{authority}/?v={version}{access}"
     site_path = reverse("builder:runtime_site", args=[project.id])
-    return request.build_absolute_uri(f"{site_path}?v={version}")
+    return request.build_absolute_uri(f"{site_path}?v={version}{access}")
 
 
-def _owned_projects_qs(user):
+def _owned_projects_qs(user, *, include_deleted: bool = False):
     if not user.is_authenticated:
         return WebsiteProject.objects.none()
-    if user.is_staff:
-        return WebsiteProject.objects.all()
-    return WebsiteProject.objects.filter(owner=user)
+    qs = WebsiteProject.objects.all() if user.is_staff else WebsiteProject.objects.filter(owner=user)
+    if not include_deleted:
+        qs = qs.filter(deleted_at__isnull=True)
+    return qs
 
 
-def _get_owned_project(request, project_id) -> WebsiteProject:
-    return get_object_or_404(_owned_projects_qs(request.user), id=project_id)
+def _get_owned_project(request, project_id, *, include_deleted: bool = False) -> WebsiteProject:
+    return get_object_or_404(
+        _owned_projects_qs(request.user, include_deleted=include_deleted),
+        id=project_id,
+    )
 
 
 def _dashboard_context(request, **extra):
     from .services.thumbnails import attach_project_thumbnails
 
     projects = list(_owned_projects_qs(request.user))
+    shopify_shops = []
+    if request.user.is_authenticated:
+        shopify_shops = list(
+            ShopifyShop.objects.filter(owner=request.user, is_active=True).order_by("-updated_at")[:5]
+        )
     context = {
         "projects": projects,
         "project_rows": attach_project_thumbnails(projects),
@@ -180,6 +250,9 @@ def _dashboard_context(request, **extra):
         "ai_configured": ai_configured(),
         "ai_status": ai_status(),
         "active_create_tab": "ai",
+        "usage": usage_summary(request.user) if request.user.is_authenticated else None,
+        "shopify_configured": shopify_configured(),
+        "shopify_shops": shopify_shops,
     }
     context.update(extra)
     return context
@@ -188,6 +261,499 @@ def _dashboard_context(request, **extra):
 @require_GET
 def dashboard(request):
     return render(request, "builder/dashboard.html", _dashboard_context(request))
+
+
+@login_required
+@require_GET
+def workspace(request):
+    return render(request, "builder/workspace.html", _dashboard_context(request))
+
+
+@login_required
+@require_GET
+def ai_builder_compose(request):
+    """Legacy paste-prompt AI builder kept for power users."""
+    start = (request.GET.get("start") or "").strip().lower()
+    start_mode = start if start in {"gate", "help", "compose", "prompt"} else "compose"
+    if start_mode == "prompt":
+        start_mode = "compose"
+    return render(
+        request,
+        "builder/ai_builder.html",
+        _dashboard_context(request, start_mode=start_mode),
+    )
+
+
+def _get_owned_brief(request, brief_id) -> AIWebsiteBrief:
+    qs = AIWebsiteBrief.objects.all() if request.user.is_staff else AIWebsiteBrief.objects.filter(owner=request.user)
+    return get_object_or_404(qs, id=brief_id)
+
+
+def _wizard_ui_step(brief: AIWebsiteBrief) -> int:
+    """Map saved step onto the 2-step idea → goals wizard."""
+    raw = int(brief.current_step or 1)
+    cta = brief.primary_cta if isinstance(brief.primary_cta, dict) else {}
+    goals = cta.get("goals") if isinstance(cta.get("goals"), list) else []
+    # Legacy wizard used 3 for goals. New wizard uses 2 for goals.
+    if raw >= 3:
+        return 2
+    if raw == 2 and goals:
+        return 2
+    return 1
+
+
+@login_required
+@require_GET
+def ai_workspace(request):
+    """Entry for Open AI Builder: creative-brief wizard (idea → goals)."""
+    if request.GET.get("new"):
+        brief = AIWebsiteBrief.objects.create(
+            owner=request.user,
+            starting_point="new",
+            current_step=1,
+        )
+    else:
+        # Reuse in-progress briefs even when a speculative project is linked.
+        brief = (
+            AIWebsiteBrief.objects.filter(
+                owner=request.user,
+                status__in=["draft", "ready", "failed"],
+            )
+            .order_by("-updated_at")
+            .first()
+        )
+        if not brief:
+            brief = AIWebsiteBrief.objects.create(
+                owner=request.user,
+                starting_point="new",
+                current_step=1,
+            )
+    if brief.starting_point not in {"new", "shopify", "redesign"}:
+        brief.starting_point = "new"
+        brief.save(update_fields=["starting_point", "updated_at"])
+    return redirect("builder:ai_wizard", brief_id=brief.id)
+
+
+def _brief_asset_payload(request, brief: AIWebsiteBrief, asset: AIWebsiteAsset) -> dict:
+    suffix = Path(asset.original_name or "").suffix.lower()
+    is_image = suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif"}
+    return {
+        "id": asset.id,
+        "name": asset.original_name,
+        "type": asset.asset_type,
+        "isImage": is_image,
+        "url": request.build_absolute_uri(
+            reverse("builder:ai_asset_file", args=[brief.id, asset.id])
+        ),
+    }
+
+
+@login_required
+@require_GET
+def ai_wizard(request, brief_id):
+    brief = _get_owned_brief(request, brief_id)
+    if brief.project_id and brief.status == "generated":
+        return redirect("builder:editor", project_id=brief.project_id)
+    from .services.question_tailor import tailor_goals_question_for_brief
+
+    assets = [_brief_asset_payload(request, brief, asset) for asset in brief.assets.all().order_by("-created_at")]
+    return render(
+        request,
+        "builder/ai_workspace.html",
+        {
+            "brief": brief,
+            "brief_assets": assets,
+            "wizard_step": _wizard_ui_step(brief),
+            "goals_question": tailor_goals_question_for_brief(brief),
+        },
+    )
+
+
+AI_TEXT_FIELDS = {
+    "starting_point",
+    "business_name",
+    "industry",
+    "description",
+    "location",
+    "language",
+    "primary_goal",
+    "value_proposition",
+    "tone",
+    "visual_style",
+    "existing_website_url",
+}
+AI_JSON_FIELDS = {
+    "primary_cta",
+    "audience",
+    "redesign_json",
+    "sitemap_json",
+    "services_json",
+    "trust_json",
+    "contact_json",
+    "brand_json",
+}
+
+
+@login_required
+@require_POST
+def ai_autosave(request, brief_id):
+    brief = _get_owned_brief(request, brief_id)
+    if brief.status in {"generating", "generated"}:
+        return JsonResponse({"error": "This brief can no longer be edited."}, status=409)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"error": "Invalid JSON."}, status=400)
+    if not isinstance(payload, dict):
+        return JsonResponse({"error": "Expected an object."}, status=400)
+
+    errors = {}
+    changed = []
+    for key, value in payload.items():
+        if key == "current_step":
+            try:
+                step = int(value)
+            except (TypeError, ValueError):
+                errors[key] = "Step must be a number."
+                continue
+            if not 1 <= step <= 4:
+                errors[key] = "Step must be between 1 and 4."
+                continue
+            brief.current_step = step
+            changed.append(key)
+        elif key in AI_TEXT_FIELDS:
+            if not isinstance(value, str):
+                errors[key] = "Expected text."
+                continue
+            value = value.strip()
+            if key == "existing_website_url" and value:
+                try:
+                    URLValidator(schemes=["http", "https"])(value)
+                except ValidationError:
+                    errors[key] = "Enter a complete http:// or https:// URL."
+                    continue
+            max_length = brief._meta.get_field(key).max_length
+            if max_length and len(value) > max_length:
+                errors[key] = f"Maximum length is {max_length} characters."
+                continue
+            setattr(brief, key, value)
+            changed.append(key)
+        elif key in AI_JSON_FIELDS:
+            if not isinstance(value, (dict, list)):
+                errors[key] = "Expected structured data."
+                continue
+            setattr(brief, key, value)
+            changed.append(key)
+    if errors:
+        return JsonResponse({"error": "Some fields are invalid.", "fields": errors}, status=400)
+    if changed:
+        brief.save(update_fields=list(dict.fromkeys(changed + ["updated_at"])))
+    # Rewrite the master prompt on every save. Start Codex as soon as name +
+    # description are solid enough (do not wait for the goals step).
+    prefetch = refresh_master_prompt(
+        brief,
+        start_prefetch=brief_can_prefetch(brief),
+    )
+    from .services.question_tailor import tailor_goals_question_for_brief
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "savedAt": brief.updated_at.isoformat(),
+            "prefetch": prefetch,
+            "goalsQuestion": tailor_goals_question_for_brief(brief),
+        }
+    )
+
+
+@login_required
+@require_POST
+def ai_upload_asset(request, brief_id):
+    brief = _get_owned_brief(request, brief_id)
+    if brief.status in {"generating", "generated"}:
+        return JsonResponse({"error": "This brief can no longer be edited."}, status=409)
+    uploaded = request.FILES.get("file")
+    if not uploaded:
+        return JsonResponse({"error": "Choose a file to upload."}, status=400)
+    if uploaded.size > 10 * 1024 * 1024:
+        return JsonResponse({"error": "Files must be 10 MB or smaller."}, status=400)
+    suffix = Path(uploaded.name).suffix.lower()
+    if suffix not in {".png", ".jpg", ".jpeg", ".webp", ".svg", ".pdf", ".gif", ".avif"}:
+        return JsonResponse({"error": "Upload PNG, JPG, WebP, SVG or PDF files."}, status=400)
+    asset_type = request.POST.get("asset_type", "reference")
+    if asset_type not in {"logo", "image", "document", "reference"}:
+        asset_type = "reference"
+    # Only one logo at a time: demote previous logos when a new logo is uploaded.
+    if asset_type == "logo":
+        brief.assets.filter(asset_type="logo").update(asset_type="image")
+    asset = AIWebsiteAsset.objects.create(
+        brief=brief,
+        file=uploaded,
+        asset_type=asset_type,
+        original_name=Path(uploaded.name).name,
+    )
+    prefetch = refresh_master_prompt(brief, start_prefetch=brief_can_prefetch(brief))
+    return JsonResponse(
+        {
+            "ok": True,
+            "asset": _brief_asset_payload(request, brief, asset),
+            "prefetch": prefetch,
+        }
+    )
+
+
+@login_required
+@require_GET
+def ai_asset_file(request, brief_id, asset_id):
+    brief = _get_owned_brief(request, brief_id)
+    asset = get_object_or_404(AIWebsiteAsset, id=asset_id, brief=brief)
+    if not asset.file:
+        raise Http404
+    content_type, _encoding = mimetypes.guess_type(asset.original_name or asset.file.name)
+    response = FileResponse(asset.file.open("rb"), content_type=content_type or "application/octet-stream")
+    response["Cache-Control"] = "private, max-age=3600"
+    return response
+
+
+@login_required
+@require_POST
+def ai_asset_detail(request, brief_id, asset_id):
+    brief = _get_owned_brief(request, brief_id)
+    asset = get_object_or_404(AIWebsiteAsset, id=asset_id, brief=brief)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        payload = request.POST
+    if brief.status in {"generating", "generated"}:
+        return JsonResponse({"error": "This brief can no longer be edited."}, status=409)
+    action = str(payload.get("action") or "").strip().lower()
+    if action == "delete":
+        if asset.file:
+            asset.file.delete(save=False)
+        asset.delete()
+        prefetch = refresh_master_prompt(
+            brief,
+            start_prefetch=brief_can_prefetch(brief),
+        )
+        return JsonResponse({"ok": True, "prefetch": prefetch})
+    asset_type = str(payload.get("asset_type") or "").strip()
+    if asset_type not in {"logo", "image", "document", "reference"}:
+        return JsonResponse({"error": "Invalid asset type."}, status=400)
+    if asset_type == "logo":
+        brief.assets.exclude(id=asset.id).filter(asset_type="logo").update(asset_type="image")
+    asset.asset_type = asset_type
+    asset.save(update_fields=["asset_type"])
+    prefetch = refresh_master_prompt(
+        brief,
+        start_prefetch=brief_can_prefetch(brief),
+    )
+    return JsonResponse(
+        {
+            "ok": True,
+            "asset": _brief_asset_payload(request, brief, asset),
+            "prefetch": prefetch,
+        }
+    )
+
+
+@login_required
+@require_GET
+def ai_review(request, brief_id):
+    from .services.ai_website import brief_goals, display_goal
+    from .services.question_tailor import OTHER_GOAL
+
+    brief = _get_owned_brief(request, brief_id)
+    if brief.project_id and brief.status == "generated":
+        return redirect("builder:editor", project_id=brief.project_id)
+    goals = brief_goals(brief)
+    if goals and not brief.primary_goal:
+        brief.primary_goal = goals[0]
+    primary = brief.primary_goal or (goals[0] if goals else "")
+    structure_goal = "default" if primary == OTHER_GOAL else primary
+    if not brief.sitemap_json:
+        brief.sitemap_json = recommend_sitemap(structure_goal)
+    brief.current_step = 4
+    brief.status = "ready" if brief_is_buildable(brief) else "draft"
+    brief.save(
+        update_fields=[
+            "sitemap_json",
+            "current_step",
+            "status",
+            "primary_goal",
+            "updated_at",
+        ]
+    )
+    # On the summary page, keep the master prompt current and ensure a background build is running.
+    refresh_master_prompt(brief, start_prefetch=brief_can_prefetch(brief))
+    assets = [_brief_asset_payload(request, brief, asset) for asset in brief.assets.all().order_by("-created_at")]
+    return render(
+        request,
+        "builder/ai_review.html",
+        {
+            "brief": brief,
+            "missing": identify_missing_information(brief),
+            "sections": recommend_homepage_sections(structure_goal),
+            "goals": [display_goal(item, brief) for item in goals],
+            "brief_assets": assets,
+            "prefetch": prefetch_status_payload(brief),
+        },
+    )
+
+
+@login_required
+@require_GET
+def ai_build_status(request, brief_id):
+    """Poll progressive prompt cache / speculative build status."""
+    brief = _get_owned_brief(request, brief_id)
+    return JsonResponse({"ok": True, **prefetch_status_payload(brief)})
+
+
+def _ai_wants_json(request) -> bool:
+    accept = request.headers.get("Accept", "")
+    return "application/json" in accept or request.GET.get("format") == "json"
+
+
+@login_required
+@require_POST
+def ai_generate(request, brief_id):
+    brief = _get_owned_brief(request, brief_id)
+    wants_json = _ai_wants_json(request)
+    from .services.ai_website import brief_goals
+
+    # Finalize a speculative build that already finished for this fingerprint.
+    refresh_master_prompt(brief, start_prefetch=False)
+    brief.refresh_from_db()
+    status = prefetch_status_payload(brief)
+
+    if brief.project_id and brief.status == "generated":
+        editor_url = f"{reverse('builder:editor', args=[brief.project_id])}?mode=safe"
+        if wants_json:
+            return JsonResponse({"ok": True, "ready": True, "redirectUrl": editor_url})
+        return redirect(editor_url)
+
+    if status["ready"]:
+        # Project already exists from prefetch; only the AI generation quota applies now.
+        try:
+            assert_can_generate_ai(request.user)
+        except ValidationError as exc:
+            message = exc.messages[0] if getattr(exc, "messages", None) else str(exc)
+            if wants_json:
+                return JsonResponse({"ok": False, "error": message}, status=403)
+            messages.error(request, message)
+            return redirect("builder:ai_review", brief_id=brief.id)
+        claimed = claim_prefetch_project(brief)
+        if claimed:
+            try:
+                record_ai_generation(request.user)
+            except Exception:
+                pass
+            editor_url = f"{reverse('builder:editor', args=[claimed.id])}?mode=safe"
+            if wants_json:
+                return JsonResponse({"ok": True, "ready": True, "redirectUrl": editor_url})
+            messages.success(
+                request,
+                f"Created '{claimed.name}'. Edit anything in Safe Edit, then export.",
+            )
+            return redirect(editor_url)
+        # Claim failed after looking ready: surface the error instead of spinning forever.
+        brief.refresh_from_db()
+        status = prefetch_status_payload(brief)
+        if status.get("failed"):
+            message = status.get("error") or "The prepared site could not be opened."
+            if wants_json:
+                return JsonResponse({"ok": False, "error": message, "failed": True}, status=409)
+            messages.error(request, message)
+            return redirect("builder:ai_review", brief_id=brief.id)
+
+    if status["building"]:
+        # Keep waiting for the background worker instead of starting a second build.
+        if wants_json:
+            return JsonResponse(
+                {"ok": True, "ready": False, "building": True, **status},
+                status=202,
+            )
+        messages.info(request, "Your website is already building. This page will open it when ready.")
+        return redirect("builder:ai_review", brief_id=brief.id)
+
+    if status.get("failed") and wants_json:
+        # Clear the failed marker and start a fresh background build for the poller.
+        brief.prefetch_status = AIWebsiteBrief.PREFETCH_IDLE
+        brief.prefetch_error = ""
+        brief.save(update_fields=["prefetch_status", "prefetch_error", "updated_at"])
+
+    missing_required = []
+    if not (brief.business_name or "").strip():
+        missing_required.append("business name")
+    if not (brief.description or "").strip():
+        missing_required.append("business description")
+    if not brief_goals(brief):
+        missing_required.append("website goals")
+    if missing_required:
+        message = "Complete the required information: " + ", ".join(missing_required) + "."
+        if wants_json:
+            return JsonResponse({"ok": False, "error": message, "failed": True}, status=400)
+        messages.error(request, message)
+        return redirect("builder:ai_wizard", brief_id=brief.id)
+    try:
+        assert_can_create_project(request.user)
+        assert_can_generate_ai(request.user)
+    except ValidationError as exc:
+        message = exc.messages[0] if getattr(exc, "messages", None) else str(exc)
+        if wants_json:
+            return JsonResponse({"ok": False, "error": message}, status=403)
+        messages.error(request, message)
+        return redirect("builder:ai_review", brief_id=brief.id)
+
+    # Prefer kicking off / waiting on prefetch for JSON clients.
+    if wants_json:
+        started = maybe_start_prefetch(brief)
+        brief.refresh_from_db()
+        status = prefetch_status_payload(brief)
+        if status["ready"]:
+            claimed = claim_prefetch_project(brief)
+            if claimed:
+                try:
+                    record_ai_generation(request.user)
+                except Exception:
+                    pass
+                return JsonResponse(
+                    {
+                        "ok": True,
+                        "ready": True,
+                        "redirectUrl": f"{reverse('builder:editor', args=[claimed.id])}?mode=safe",
+                    }
+                )
+        if status["building"] or started:
+            return JsonResponse(
+                {**status, "ok": True, "ready": False, "building": True},
+                status=202,
+            )
+        message = (
+            status.get("error")
+            or "Could not start the website build. Try Generate again."
+        )
+        return JsonResponse(
+            {**status, "ok": False, "error": message, "failed": True, "building": False},
+            status=409,
+        )
+
+    try:
+        _refresh_db_connection()
+        project = generate_website_from_brief(brief, owner=request.user, mode="final")
+        _refresh_db_connection()
+        record_ai_generation(request.user)
+    except ValidationError as exc:
+        messages.error(request, exc.messages[0] if getattr(exc, "messages", None) else str(exc))
+        return redirect("builder:ai_review", brief_id=brief.id)
+    except Exception as exc:
+        messages.error(request, f"Could not generate the website. {exc}")
+        return redirect("builder:ai_review", brief_id=brief.id)
+
+    messages.success(
+        request,
+        f"Created '{project.name}'. Edit anything in Safe Edit, then export.",
+    )
+    return redirect(f"{reverse('builder:editor', args=[project.id])}?mode=safe")
 
 
 @require_GET
@@ -238,8 +804,28 @@ _POST_ONLY_NEXT_PREFIXES = (
 )
 
 
-def workspace_url() -> str:
-    return f"{reverse('builder:dashboard')}#workspace"
+def _refresh_db_connection() -> None:
+    """Drop a possibly stale DB socket after long non-DB work (AI generate, etc.).
+
+    Neon and other serverless Postgres hosts close idle connections mid-request.
+    Django's CONN_HEALTH_CHECKS only runs at request start, so long AI calls need
+    an explicit close before the next ORM write.
+    """
+    close_old_connections()
+    connection.close()
+
+
+def workspace_url(*, fragment: str = "") -> str:
+    url = reverse("builder:workspace")
+    if fragment:
+        return f"{url}#{fragment}"
+    return url
+
+
+def ai_builder_url(*, start: str = "") -> str:
+    if start in {"compose", "prompt"}:
+        return reverse("builder:ai_builder_prompt")
+    return reverse("builder:ai_builder")
 
 
 def _safe_post_login_url(candidate: str) -> str:
@@ -249,8 +835,10 @@ def _safe_post_login_url(candidate: str) -> str:
         if path == prefix or path.startswith(prefix + "?"):
             return workspace_url()
     dash = reverse("builder:dashboard")
-    bare = path.split("#", 1)[0]
+    bare, _, fragment = path.partition("#")
     if bare in {"", "/", dash} or bare.rstrip("/") == dash.rstrip("/"):
+        if fragment == "projects":
+            return workspace_url(fragment="projects")
         return workspace_url()
     return path
 
@@ -265,6 +853,14 @@ class UserLoginView(LoginView):
 
     def get_success_url(self):
         return _safe_post_login_url(super().get_success_url())
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        try:
+            ensure_profile(self.request.user)
+        except Exception:
+            pass
+        return response
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -306,6 +902,7 @@ def signup(request):
     form = SignUpForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         user = form.save()
+        ensure_profile(user)
         auth_login(request, user)
         messages.success(request, "Welcome to Siaw. Your account is ready.")
         return redirect(next_url)
@@ -326,46 +923,213 @@ def logout_view(request):
 
 @login_required
 @require_http_methods(["GET", "POST"])
+def account_settings(request):
+    from .services.demo_user import demo_credentials, ensure_demo_user
+
+    try:
+        if request.user.get_username() == demo_credentials()["username"]:
+            ensure_demo_user()
+            request.user.refresh_from_db()
+    except Exception:
+        pass
+
+    profile = ensure_profile(request.user)
+    profile_form = AccountProfileForm(instance=request.user)
+    password_form = PasswordChangeForm(user=request.user)
+    requested_plan = (request.GET.get("plan") or "").strip().lower()
+    initial_plan = requested_plan if requested_plan in {PLAN_FREE, PLAN_PRO, PLAN_STUDIO} else profile.plan
+    plan_form = PlanChangeForm(initial={"plan": initial_plan})
+    active_projects = list(_owned_projects_qs(request.user)[:50])
+    deleted_projects = list(
+        _owned_projects_qs(request.user, include_deleted=True).filter(deleted_at__isnull=False)[:20]
+    )
+
+    if request.method == "POST":
+        action = (request.POST.get("action") or "").strip()
+        if action == "profile":
+            profile_form = AccountProfileForm(request.POST, instance=request.user)
+            if profile_form.is_valid():
+                profile_form.save()
+                messages.success(request, "Profile updated.")
+                return redirect("builder:account")
+        elif action == "password":
+            password_form = PasswordChangeForm(user=request.user, data=request.POST)
+            if password_form.is_valid():
+                user = password_form.save()
+                update_session_auth_hash(request, user)
+                messages.success(request, "Password changed.")
+                return redirect("builder:account")
+        elif action == "plan":
+            plan_form = PlanChangeForm(request.POST)
+            if plan_form.is_valid():
+                profile.plan = plan_form.cleaned_data["plan"]
+                profile.save(update_fields=["plan", "updated_at"])
+                messages.success(
+                    request,
+                    f"Plan set to {profile.get_plan_display()}. Billing is illustrative for this MVP.",
+                )
+                return redirect(f"{reverse('builder:account')}#plan")
+
+    shopify_shops = list(
+        ShopifyShop.objects.filter(owner=request.user, is_active=True).order_by("-updated_at")[:10]
+    )
+    return render(
+        request,
+        "builder/account.html",
+        {
+            "profile": profile,
+            "usage": usage_summary(request.user),
+            "profile_form": profile_form,
+            "password_form": password_form,
+            "plan_form": plan_form,
+            "active_projects": active_projects,
+            "deleted_projects": deleted_projects,
+            "plan_options": [
+                (PLAN_FREE, "Free"),
+                (PLAN_PRO, "Pro"),
+                (PLAN_STUDIO, "Studio"),
+            ],
+            "shopify_configured": shopify_configured(),
+            "shopify_form": ShopifyConnectForm(),
+            "shopify_shops": shopify_shops,
+        },
+    )
+
+
+@login_required
+@require_POST
+def undelete_project(request, project_id):
+    project = _get_owned_project(request, project_id, include_deleted=True)
+    if project.deleted_at is None:
+        messages.info(request, f'"{project.name}" is already active.')
+        return redirect("builder:account")
+    try:
+        assert_can_create_project(request.user)
+    except ValidationError as exc:
+        messages.error(request, exc.messages[0] if getattr(exc, "messages", None) else str(exc))
+        return redirect("builder:account")
+    project.deleted_at = None
+    project.save(update_fields=["deleted_at", "updated_at"])
+    messages.success(request, f'Restored "{project.name}".')
+    return redirect(workspace_url(fragment="projects"))
+
+
+@login_required
+@require_POST
+def purge_project(request, project_id):
+    """Permanently remove a soft-deleted project and its files."""
+    project = _get_owned_project(request, project_id, include_deleted=True)
+    if project.deleted_at is None:
+        messages.error(request, "Move the project to Deleted first, then delete it permanently.")
+        return redirect("builder:account")
+    name = project.name
+    try:
+        from .services.preview_server import stop_preview_server
+
+        stop_preview_server(str(project.id))
+    except Exception:
+        pass
+    shutil.rmtree(project.project_dir, ignore_errors=True)
+    project.delete()
+    messages.success(request, f'Permanently deleted "{name}".')
+    return redirect("builder:account")
+
+
+@require_POST
+def draft_prompt(request):
+    """Draft a labeled AI Builder prompt from help-wizard answers."""
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return JsonResponse({"error": "Invalid JSON body."}, status=400)
+    if not isinstance(payload, dict):
+        return JsonResponse({"error": "Expected a JSON object."}, status=400)
+
+    answers = {
+        "brand": str(payload.get("brand") or "").strip(),
+        "sector": str(payload.get("sector") or "").strip(),
+        "market": str(payload.get("market") or "").strip(),
+        "goal_tone": str(payload.get("goal_tone") or "").strip(),
+        "must_include": str(payload.get("must_include") or "").strip(),
+    }
+    try:
+        prompt, name, provider = draft_prompt_from_answers(answers)
+    except ValidationError as exc:
+        message = exc.messages[0] if getattr(exc, "messages", None) else str(exc)
+        return JsonResponse({"error": message}, status=400)
+
+    status = ai_status()
+    return JsonResponse(
+        {
+            "prompt": prompt,
+            "name": name,
+            "provider": provider,
+            "model": status.get("model") or "",
+            "used_ai": provider in {"codex", "openai"},
+        }
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
 def generate_project(request):
     if request.method == "GET":
-        return redirect(f"{reverse('builder:dashboard')}#workspace")
+        return redirect(ai_builder_url())
     form = WebsiteGenerateForm(request.POST)
     if not form.is_valid():
         return render(
             request,
-            "builder/dashboard.html",
-            _dashboard_context(request, generate_form=form, active_create_tab="ai"),
+            "builder/ai_builder.html",
+            _dashboard_context(request, generate_form=form, start_mode="compose"),
+            status=400,
+        )
+
+    try:
+        assert_can_create_project(request.user)
+        assert_can_generate_ai(request.user)
+    except ValidationError as exc:
+        form.add_error(None, exc.messages[0] if getattr(exc, "messages", None) else str(exc))
+        return render(
+            request,
+            "builder/ai_builder.html",
+            _dashboard_context(request, generate_form=form, start_mode="compose"),
             status=400,
         )
 
     project = WebsiteProject.objects.create(name=form.cleaned_data["name"], owner=request.user)
     try:
+        # Release Neon/Postgres before a long AI call so we do not hold a dead idle socket.
+        _refresh_db_connection()
         generated = create_website_from_prompt(
             project.project_dir,
             prompt=form.cleaned_data["prompt"],
             project_name=form.cleaned_data["name"],
             force_offline=bool(getattr(django_settings, "SIAW_AI_FORCE_OFFLINE", False)),
         )
+        _refresh_db_connection()
         project.entry_file = generated.entry_file
         project.stylesheet_files = generated.stylesheet_files
         project.save(update_fields=["entry_file", "stylesheet_files", "updated_at"])
+        record_ai_generation(request.user)
     except ValidationError as exc:
         shutil.rmtree(project.project_dir, ignore_errors=True)
-        project.delete()
+        _refresh_db_connection()
+        WebsiteProject.objects.filter(pk=project.pk).delete()
         form.add_error(None, exc.messages[0] if getattr(exc, "messages", None) else str(exc))
         return render(
             request,
-            "builder/dashboard.html",
-            _dashboard_context(request, generate_form=form, active_create_tab="ai"),
+            "builder/ai_builder.html",
+            _dashboard_context(request, generate_form=form, start_mode="compose"),
             status=400,
         )
     except Exception:
         shutil.rmtree(project.project_dir, ignore_errors=True)
-        project.delete()
+        _refresh_db_connection()
+        WebsiteProject.objects.filter(pk=project.pk).delete()
         raise
 
-    if generated.provider == "ollama":
-        provider_label = "Ollama"
+    if generated.provider == "codex":
+        provider_label = "Codex"
     elif generated.provider == "openai":
         provider_label = "OpenAI"
     else:
@@ -381,12 +1145,23 @@ def generate_project(request):
 @require_http_methods(["GET", "POST"])
 def upload_project(request):
     if request.method == "GET":
-        return redirect(f"{reverse('builder:dashboard')}#workspace")
+        return redirect(workspace_url())
     form = WebsiteUploadForm(request.POST, request.FILES)
     if not form.is_valid():
         return render(
             request,
-            "builder/dashboard.html",
+            "builder/workspace.html",
+            _dashboard_context(request, form=form, active_create_tab="import"),
+            status=400,
+        )
+
+    try:
+        assert_can_create_project(request.user)
+    except ValidationError as exc:
+        form.add_error(None, exc.messages[0] if getattr(exc, "messages", None) else str(exc))
+        return render(
+            request,
+            "builder/workspace.html",
             _dashboard_context(request, form=form, active_create_tab="import"),
             status=400,
         )
@@ -421,7 +1196,7 @@ def upload_project(request):
         form.add_error("website_zip", exc.messages[0])
         return render(
             request,
-            "builder/dashboard.html",
+            "builder/workspace.html",
             _dashboard_context(request, form=form, active_create_tab="import"),
             status=400,
         )
@@ -459,10 +1234,10 @@ def delete_project(request, project_id):
         stop_preview_server(str(project.id))
     except Exception:
         pass
-    shutil.rmtree(project.project_dir, ignore_errors=True)
-    project.delete()
-    messages.success(request, f'Deleted "{name}".')
-    return redirect("builder:dashboard")
+    project.deleted_at = timezone.now()
+    project.save(update_fields=["deleted_at", "updated_at"])
+    messages.success(request, f'Moved "{name}" to deleted projects. Restore it from Account.')
+    return redirect(workspace_url(fragment="projects"))
 
 
 @require_GET
@@ -667,6 +1442,24 @@ def editor_data(request, project_id):
                 "ssrPreview": True,
             }
         )
+
+    from .services.remote_media import (
+        project_needs_shopify_image_repair,
+        repair_project_shopify_images,
+    )
+
+    editor_json_path = project.project_dir / "editor" / "project.json"
+    if project_needs_shopify_image_repair(
+        project.source_dir,
+        editor_data_path=editor_json_path,
+    ):
+        try:
+            repair_project_shopify_images(
+                project.source_dir,
+                editor_data_path=editor_json_path,
+            )
+        except Exception:
+            logger.exception("Shopify media repair failed for project %s", project.id)
 
     html_text = project.entry_path.read_text(encoding="utf-8", errors="replace")
     repaired_html = rewrite_html_for_editor_entry(html_text, relative_html_path=project.entry_file)
@@ -1267,8 +2060,9 @@ def upload_asset(request, project_id):
 
 
 @require_GET
+@login_required
 def preview(request, project_id):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = _get_owned_project(request, project_id)
     build_status = read_build_status(project.project_dir)
     prefer_live = False
     website_type = ""
@@ -1314,18 +2108,23 @@ def preview(request, project_id):
 @require_GET
 def runtime_site(request, project_id, asset_path=""):
     """Path-based website root for production hosts without *.runtime.localhost DNS."""
-    project = get_object_or_404(WebsiteProject, id=project_id)
-    return serve_runtime_request(
+    project = get_object_or_404(WebsiteProject, id=project_id, deleted_at__isnull=True)
+    if not request_can_serve_runtime_path(request, project, asset_path or ""):
+        raise Http404
+    response = serve_runtime_request(
         request,
         project,
         asset_path or "",
         rewrite_absolute_assets=True,
     )
+    return attach_runtime_access_cookie(response, request, project)
 
 
 @require_GET
 def project_file(request, project_id, file_path):
-    project = get_object_or_404(WebsiteProject, id=project_id)
+    project = get_object_or_404(WebsiteProject, id=project_id, deleted_at__isnull=True)
+    if not request_can_serve_runtime_path(request, project, file_path):
+        raise Http404
     try:
         target = safe_project_path(project.source_dir, file_path)
     except FileNotFoundError as exc:
@@ -1377,7 +2176,7 @@ def project_file(request, project_id, file_path):
             + ("frame-ancestors *; " if isolated_runtime else "frame-ancestors 'self'; ")
             + f"sandbox {sandbox_tokens}"
         )
-    return response
+    return attach_runtime_access_cookie(response, request, project)
 
 
 @require_GET

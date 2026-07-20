@@ -8,3 +8,5 @@ media/projects/
 *.log
 .env
 .tmp-vite-smoke*/
+node_modules/
+.shopify/

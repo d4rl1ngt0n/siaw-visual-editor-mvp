@@ -28,15 +28,34 @@ IMAGE_EXTS = {
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
 
 
+# App screens where marketing site-edit must never inject UI chrome.
+SITE_EDIT_BLOCKED_PREFIXES = (
+    "/login",
+    "/signup",
+    "/logout",
+    "/account",
+    "/workspace",
+    "/projects/",
+    "/admin",
+    "/site-edit/",
+)
+
+
 def site_edit_allowed(request: HttpRequest | None) -> bool:
-    """True only for local DEBUG servers. Never on deployed hosts."""
+    """True only for local DEBUG marketing pages. Never on deployed hosts or app screens."""
     if not request or not getattr(settings, "DEBUG", False):
         return False
     if getattr(settings, "SIAW_SITE_EDIT", True) is False:
         return False
     raw_host = request.META.get("HTTP_HOST") or request.META.get("SERVER_NAME") or ""
     host = str(raw_host).split(":", 1)[0].lower()
-    return host in LOCAL_HOSTS or host.endswith(".localhost")
+    if not (host in LOCAL_HOSTS or host.endswith(".localhost")):
+        return False
+    path = (getattr(request, "path", "") or "/").split("?", 1)[0].lower()
+    for prefix in SITE_EDIT_BLOCKED_PREFIXES:
+        if path == prefix.rstrip("/") or path.startswith(prefix):
+            return False
+    return True
 
 
 def _iter_template_files() -> list[Path]:

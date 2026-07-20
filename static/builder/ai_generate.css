@@ -1,0 +1,88 @@
+/* Shared generate-website progress overlay */
+body.is-generating{overflow:hidden}
+.generate-overlay[hidden]{display:none!important}
+.generate-overlay{
+  position:fixed;inset:0;z-index:100;display:grid;place-items:center;
+  padding:32px 20px;background:
+    radial-gradient(circle at 20% 20%,rgba(255,81,69,.12),transparent 35%),
+    radial-gradient(circle at 80% 10%,rgba(23,26,25,.08),transparent 30%),
+    #f4f5f2;
+}
+.generate-overlay-card{
+  width:min(560px,100%);padding:42px 36px 34px;border-radius:28px;
+  background:#fff;border:1px solid #dfe3e1;
+  box-shadow:0 30px 80px rgba(23,26,25,.12);text-align:center;
+  color:#171a19;font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;
+}
+.generate-build-stage{
+  position:relative;width:min(280px,70vw);height:180px;margin:0 auto 28px;
+}
+.generate-browser{
+  position:absolute;inset:18px 10px 10px;border:1px solid #d7dbd8;border-radius:16px;
+  background:#fbfbfa;overflow:hidden;box-shadow:0 18px 40px rgba(23,26,25,.08);
+  animation:generate-float 3.6s ease-in-out infinite;
+}
+.generate-browser-bar{
+  height:28px;display:flex;align-items:center;gap:6px;padding:0 12px;
+  border-bottom:1px solid #e6e9e7;background:#f1f2f0;
+}
+.generate-browser-bar i{width:8px;height:8px;border-radius:50%;background:#d0d5d2;display:block}
+.generate-browser-bar i:nth-child(1){background:#ff8b7f}
+.generate-browser-bar i:nth-child(2){background:#f0c36a}
+.generate-browser-bar i:nth-child(3){background:#7dcaa0}
+.generate-browser-body{padding:14px;display:grid;gap:10px}
+.generate-skel{
+  height:12px;border-radius:999px;background:linear-gradient(90deg,#ecefec 0%,#f7f8f6 45%,#ecefec 100%);
+  background-size:200% 100%;animation:generate-shimmer 1.4s linear infinite;
+}
+.generate-skel.is-hero{height:54px;border-radius:12px}
+.generate-skel.is-wide{width:92%}
+.generate-skel.is-mid{width:68%}
+.generate-skel.is-short{width:42%}
+.generate-blocks{position:absolute;inset:0;pointer-events:none}
+.generate-block{
+  position:absolute;border-radius:10px;background:#171a19;opacity:.9;
+  animation:generate-drop .9s cubic-bezier(.2,.8,.2,1) both;
+}
+.generate-block:nth-child(1){width:46px;height:34px;left:8%;top:8%;background:#ff5145;animation-delay:.05s}
+.generate-block:nth-child(2){width:58px;height:24px;right:10%;top:18%;animation-delay:.18s}
+.generate-block:nth-child(3){width:36px;height:36px;left:18%;bottom:14%;background:#2f7543;animation-delay:.32s}
+.generate-block:nth-child(4){width:50px;height:28px;right:16%;bottom:10%;background:#173a53;animation-delay:.46s}
+.generate-overlay-card h2{
+  margin:0 0 8px;font-size:clamp(28px,4vw,40px);letter-spacing:-.045em;line-height:1.05;
+}
+.generate-overlay-card .generate-lead{margin:0 0 22px;color:#68716e;font-size:15px;line-height:1.5}
+.generate-meter{display:grid;gap:10px;margin:0 0 22px;text-align:left}
+.generate-meter-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.generate-meter-top strong{font-size:28px;letter-spacing:-.04em}
+.generate-meter-top span{color:#68716e;font-size:13px;font-weight:650}
+.generate-track{height:10px;border-radius:999px;background:#ecefec;overflow:hidden}
+.generate-fill{
+  display:block;height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,#171a19,#ff5145);
+  transition:width .25s ease-out;
+}
+.generate-stages{list-style:none;margin:0;padding:0;display:grid;gap:8px;text-align:left}
+.generate-stages li{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;
+  background:#f6f7f5;color:#8a918e;font-size:13px;font-weight:650;
+}
+.generate-stages li::before{
+  content:"";width:10px;height:10px;border-radius:50%;background:#c9cecb;flex:0 0 auto;
+}
+.generate-stages li.is-active{color:#171a19;background:#fff3f1}
+.generate-stages li.is-active::before{background:#ff5145;box-shadow:0 0 0 4px rgba(255,81,69,.18)}
+.generate-stages li.is-done{color:#2f7543;background:#eaf4ec}
+.generate-stages li.is-done::before{background:#2f7543}
+.generate-note{margin:18px 0 0;color:#68716e;font-size:12px}
+@keyframes generate-shimmer{to{background-position:-200% 0}}
+@keyframes generate-float{
+  0%,100%{transform:translateY(0)}
+  50%{transform:translateY(-6px)}
+}
+@keyframes generate-drop{
+  from{opacity:0;transform:translateY(-18px) scale(.85)}
+  to{opacity:.92;transform:translateY(0) scale(1)}
+}
+@media (prefers-reduced-motion:reduce){
+  .generate-browser,.generate-skel,.generate-block{animation:none!important}
+}

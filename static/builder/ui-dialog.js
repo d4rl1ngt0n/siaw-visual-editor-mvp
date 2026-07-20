@@ -164,16 +164,29 @@
 
   async function alert(message, options = {}) {
     const text = String(message ?? "");
-    await openDialog({
+    const buttons = Array.isArray(options.buttons) && options.buttons.length
+      ? options.buttons
+      : [
+          ...(options.secondaryLabel
+            ? [{ label: options.secondaryLabel, value: options.secondaryValue ?? "secondary" }]
+            : []),
+          {
+            label: options.okLabel || "OK",
+            value: options.okValue ?? "ok",
+            className: "siaw-dialog-btn-primary",
+          },
+        ];
+    const primaryValue = buttons.find((b) => (b.className || "").includes("primary"))?.value
+      ?? buttons[buttons.length - 1]?.value
+      ?? "ok";
+    return openDialog({
       mode: "alert",
       title: options.title || TITLE.alert,
       eyebrow: options.eyebrow || "Notice",
       message: options.message != null ? String(options.message) : text,
-      escapeValue: undefined,
-      enterValue: undefined,
-      buttons: [
-        { label: options.okLabel || "OK", value: undefined, className: "siaw-dialog-btn-primary" },
-      ],
+      escapeValue: options.escapeValue !== undefined ? options.escapeValue : "dismiss",
+      enterValue: options.enterValue !== undefined ? options.enterValue : primaryValue,
+      buttons,
     });
   }
 
