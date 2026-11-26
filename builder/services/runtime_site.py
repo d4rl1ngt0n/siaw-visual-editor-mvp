@@ -1,4 +1,4 @@
-"""Serve built websites from a real web root (Lovable-style preview).
+"""Serve built websites from a real web-root preview.
 
 Vite/React apps emit absolute asset paths like /assets/index-abc.js. Those only
 work when the preview origin serves the build folder as /. Locally we use

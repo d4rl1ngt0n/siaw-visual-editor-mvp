@@ -1,8 +1,8 @@
 {
-  "name": "siaw-visual-editor",
+  "name": "webridge-ai",
   "private": true,
   "version": "0.1.0",
-  "description": "Siaw Visual Editor Shopify app config root (Django app hosts the web surface).",
+  "description": "WeBridge AI Django application (Shopify app config root).",
   "scripts": {
     "shopify": "shopify"
   },

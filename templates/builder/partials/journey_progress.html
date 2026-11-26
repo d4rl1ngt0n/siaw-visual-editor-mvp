@@ -1,0 +1,30 @@
+<section class="wb-journey wrap" aria-labelledby="journey-title">
+  <div class="wb-journey-copy">
+    <p class="eyebrow">Recommended next step</p>
+    <h2 id="journey-title">Keep moving toward a publishable website.</h2>
+    <p>We only mark progress that WeBridge AI can verify from your saved brief and websites.</p>
+    <a class="btn btn-primary" href="{{ journey.action_url }}">{{ journey.action_label }}</a>
+  </div>
+  <ol class="wb-journey-steps" aria-label="Website creation progress">
+    <li class="{% if journey.brief_started %}is-done{% else %}is-current{% endif %}">
+      <span aria-hidden="true">{% if journey.brief_started %}✓{% else %}1{% endif %}</span>
+      <div><strong>Describe your business</strong><small>{% if journey.brief_started %}Brief started{% else %}Your first guided step{% endif %}</small></div>
+    </li>
+    <li class="{% if journey.brief_ready %}is-done{% elif journey.brief_started %}is-current{% endif %}">
+      <span aria-hidden="true">{% if journey.brief_ready %}✓{% else %}2{% endif %}</span>
+      <div><strong>Review your brief</strong><small>{% if journey.brief_ready %}Ready for creation{% else %}Confirm the website direction{% endif %}</small></div>
+    </li>
+    <li class="{% if journey.website_created %}is-done{% elif journey.brief_ready %}is-current{% endif %}">
+      <span aria-hidden="true">{% if journey.website_created %}✓{% else %}3{% endif %}</span>
+      <div><strong>Create your website</strong><small>{% if journey.website_created %}Website available{% else %}Generate the complete first version{% endif %}</small></div>
+    </li>
+    <li class="{% if journey.website_created %}is-current{% endif %}">
+      <span aria-hidden="true">4</span>
+      <div><strong>Refine and preview</strong><small>Completed inside the editor and preview</small></div>
+    </li>
+    <li>
+      <span aria-hidden="true">5</span>
+      <div><strong>Publish</strong><small>Publication is not yet available in this MVP</small></div>
+    </li>
+  </ol>
+</section>

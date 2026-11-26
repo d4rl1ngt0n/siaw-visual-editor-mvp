@@ -35,8 +35,8 @@ class PlanLimits:
 
 PLAN_LIMITS: dict[str, PlanLimits] = {
     PLAN_FREE: PlanLimits(PLAN_FREE, "Free", max_projects=2, max_ai_generations=3),
-    PLAN_PRO: PlanLimits(PLAN_PRO, "Pro", max_projects=None, max_ai_generations=60),
-    PLAN_STUDIO: PlanLimits(PLAN_STUDIO, "Studio", max_projects=None, max_ai_generations=None),
+    PLAN_PRO: PlanLimits(PLAN_PRO, "Professional", max_projects=None, max_ai_generations=60),
+    PLAN_STUDIO: PlanLimits(PLAN_STUDIO, "Business", max_projects=None, max_ai_generations=None),
 }
 
 

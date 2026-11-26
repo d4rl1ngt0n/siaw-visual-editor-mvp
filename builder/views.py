@@ -58,6 +58,7 @@ from .services.plans import (
     assert_can_create_project,
     assert_can_generate_ai,
     ensure_profile,
+    plan_limits,
     record_ai_generation,
     usage_summary,
 )
@@ -242,6 +243,28 @@ def _dashboard_context(request, **extra):
         shopify_shops = list(
             ShopifyShop.objects.filter(owner=request.user, is_active=True).order_by("-updated_at")[:5]
         )
+    latest_brief = None
+    if request.user.is_authenticated:
+        latest_brief = AIWebsiteBrief.objects.filter(owner=request.user).order_by("-updated_at").first()
+    brief_started = bool(latest_brief and (
+        latest_brief.business_name
+        or latest_brief.description
+        or int(latest_brief.current_step or 1) > 1
+    ))
+    brief_ready = bool(latest_brief and latest_brief.status in {"ready", "generating", "generated"})
+    website_created = bool(projects)
+    if not brief_started:
+        journey_action_url = reverse("builder:ai_builder")
+        journey_action_label = "Start your business brief"
+    elif not brief_ready:
+        journey_action_url = reverse("builder:ai_wizard", args=[latest_brief.id])
+        journey_action_label = "Continue your business brief"
+    elif not website_created:
+        journey_action_url = reverse("builder:ai_review", args=[latest_brief.id])
+        journey_action_label = "Review and create your website"
+    else:
+        journey_action_url = f"{reverse('builder:preview', args=[projects[0].id])}"
+        journey_action_label = "Preview your latest website"
     context = {
         "projects": projects,
         "project_rows": attach_project_thumbnails(projects),
@@ -253,6 +276,13 @@ def _dashboard_context(request, **extra):
         "usage": usage_summary(request.user) if request.user.is_authenticated else None,
         "shopify_configured": shopify_configured(),
         "shopify_shops": shopify_shops,
+        "journey": {
+            "brief_started": brief_started,
+            "brief_ready": brief_ready,
+            "website_created": website_created,
+            "action_url": journey_action_url,
+            "action_label": journey_action_label,
+        },
     }
     context.update(extra)
     return context
@@ -652,7 +682,7 @@ def ai_generate(request, brief_id):
                 return JsonResponse({"ok": True, "ready": True, "redirectUrl": editor_url})
             messages.success(
                 request,
-                f"Created '{claimed.name}'. Edit anything in Safe Edit, then export.",
+                f"Created '{claimed.name}'. Your website is ready to review and refine.",
             )
             return redirect(editor_url)
         # Claim failed after looking ready: surface the error instead of spinning forever.
@@ -751,7 +781,7 @@ def ai_generate(request, brief_id):
 
     messages.success(
         request,
-        f"Created '{project.name}'. Edit anything in Safe Edit, then export.",
+        f"Created '{project.name}'. Your website is ready to review and refine.",
     )
     return redirect(f"{reverse('builder:editor', args=[project.id])}?mode=safe")
 
@@ -904,7 +934,7 @@ def signup(request):
         user = form.save()
         ensure_profile(user)
         auth_login(request, user)
-        messages.success(request, "Welcome to Siaw. Your account is ready.")
+        messages.success(request, "Welcome to WeBridge AI. Your account is ready.")
         return redirect(next_url)
     return render(
         request,
@@ -966,7 +996,7 @@ def account_settings(request):
                 profile.save(update_fields=["plan", "updated_at"])
                 messages.success(
                     request,
-                    f"Plan set to {profile.get_plan_display()}. Billing is illustrative for this MVP.",
+                    f"Plan set to {plan_limits(profile.plan).label}. This MVP does not process billing.",
                 )
                 return redirect(f"{reverse('builder:account')}#plan")
 
@@ -986,8 +1016,8 @@ def account_settings(request):
             "deleted_projects": deleted_projects,
             "plan_options": [
                 (PLAN_FREE, "Free"),
-                (PLAN_PRO, "Pro"),
-                (PLAN_STUDIO, "Studio"),
+                (PLAN_PRO, "Professional"),
+                (PLAN_STUDIO, "Business"),
             ],
             "shopify_configured": shopify_configured(),
             "shopify_form": ShopifyConnectForm(),
@@ -1136,7 +1166,7 @@ def generate_project(request):
         provider_label = "built-in design engine"
     messages.success(
         request,
-        f"Created '{project.name}' with {provider_label}. Edit anything in Safe Edit, then export.",
+        f"Created '{project.name}' with {provider_label}. Your website is ready to review and refine.",
     )
     return redirect(f"{reverse('builder:editor', args=[project.id])}?mode=safe")
 

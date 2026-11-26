@@ -29,6 +29,7 @@ MAX_IMAGE_BYTES = 4 * 1024 * 1024
 
 
 # App screens where marketing site-edit must never inject UI chrome.
+# Do not include /site-edit/ API routes here; those endpoints gate on DEBUG + localhost separately.
 SITE_EDIT_BLOCKED_PREFIXES = (
     "/login",
     "/signup",
@@ -37,7 +38,6 @@ SITE_EDIT_BLOCKED_PREFIXES = (
     "/workspace",
     "/projects/",
     "/admin",
-    "/site-edit/",
 )
 
 

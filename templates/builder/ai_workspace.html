@@ -4,13 +4,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Build with AI · Siaw</title>
-  <link rel="stylesheet" href="{% static 'builder/ai_workspace.css' %}?v=brief-11">
+  <title>Build with AI · WeBridge AI</title>
+  <script>
+    (function () {
+      var theme = "light";
+      try {
+        theme = localStorage.getItem("wb-theme")
+          || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      } catch (e) { /* default stays light */ }
+      document.documentElement.setAttribute("data-wb-theme", theme);
+    })();
+  </script>
+  <link rel="stylesheet" href="{% static 'builder/ai_workspace.css' %}?v=brief-14">
+  <link rel="stylesheet" href="{% static 'builder/webridge-app.css' %}?v=wb-8">
 </head>
-<body data-step="{{ wizard_step }}">
+<body class="wb-app" data-step="{{ wizard_step }}">
+  <a class="wb-skip-link" href="#wizard">Skip to brief</a>
   <header class="ai-topbar">
-    <a href="{% url 'builder:workspace' %}" class="brand"><span>S</span><strong>Siaw</strong></a>
+    <a href="{% url 'builder:workspace' %}" class="brand"><span>W</span><strong>WeBridge AI</strong></a>
     <div class="save-state" id="saveState" role="status">All changes saved</div>
+    <button type="button" class="wb-theme-toggle" data-wb-theme-toggle aria-label="Switch to dark mode" aria-pressed="false">
+      <svg class="wb-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M21.5 12h-2.2M4.7 12H2.5M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6M18.7 18.7l-1.6-1.6M6.9 6.9L5.3 5.3"/></svg>
+      <svg class="wb-icon-moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.6 14.8A8.6 8.6 0 0 1 9.2 3.4a.7.7 0 0 0-.9-.9 9.9 9.9 0 1 0 13.2 13.2.7.7 0 0 0-.9-.9Z"/></svg>
+    </button>
     <a class="exit-link" href="{% url 'builder:workspace' %}">Save & exit</a>
   </header>
   <div class="progress"><span id="progressBar"></span></div>
@@ -159,5 +175,6 @@
     };
   </script>
   <script src="{% static 'builder/ai_workspace.js' %}?v=brief-13"></script>
+  <script src="{% static 'builder/webridge-app.js' %}?v=wb-2" defer></script>
 </body>
 </html>

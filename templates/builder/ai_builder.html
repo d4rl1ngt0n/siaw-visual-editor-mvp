@@ -1,20 +1,19 @@
 {% extends "builder/base_site.html" %}
 {% load static %}
 
-{% block title %}AI Builder | Siaw{% endblock %}
+{% block title %}AI Builder | WeBridge AI{% endblock %}
 {% block body_class %}page-ai-builder{% endblock %}
-{% block meta_description %}Build a website with AI. Answer a few questions, draft a brief, then generate an editable site in Siaw.{% endblock %}
+{% block meta_description %}Build a website with AI. Answer a few questions, draft a brief, then generate an editable site in WeBridge AI.{% endblock %}
 {% block site_footer %}{% endblock %}
 
 {% block extra_head %}
-  <link rel="stylesheet" href="{% static 'builder/dashboard.css' %}?v=ai-stage-3">
-  <link rel="stylesheet" href="{% static 'builder/ai_generate.css' %}?v=gen-1">
+  <link rel="stylesheet" href="{% static 'builder/ai_generate.css' %}?v=gen-3">
 {% endblock %}
 
 {% block scripts %}
   {{ block.super }}
   <script src="{% static 'builder/dashboard.js' %}?v=ai-stage-3" defer></script>
-  <script src="{% static 'builder/ai_generate.js' %}?v=gen-1" defer></script>
+  <script src="{% static 'builder/ai_generate.js' %}?v=gen-4" defer></script>
 {% endblock %}
 
 {% block top_nav %}
@@ -30,7 +29,7 @@
   <div class="ai-build-shell wrap">
     <header class="ai-build-hero" data-ai-page-hero>
       <div class="ai-build-hero-copy">
-        <p class="eyebrow">Personal AI Builder</p>
+        <p class="eyebrow">AI website builder</p>
         <h1>Let's build your site{% if user.first_name %}, {{ user.first_name }}{% elif user.get_username %}, {{ user.get_username }}{% endif %}</h1>
         <p class="ai-build-lead" data-ai-heading-lead>
           {% if start_mode == "compose" %}
@@ -100,9 +99,27 @@
         <li data-generate-stage>Structure planned</li>
         <li data-generate-stage>Pages and copy drafted</li>
         <li data-generate-stage>Design polished</li>
-        <li data-generate-stage>Opening in the editor</li>
+        <li data-generate-stage>Ready to review</li>
       </ul>
-      <p class="generate-note">Keep this tab open. We will take you to the editor when it is ready.</p>
+      <p class="generate-note">Keep this tab open. We will show your first website when it is ready.</p>
+    </div>
+  </div>
+
+  <div class="wb-reveal" data-wb-reveal hidden aria-hidden="true" role="dialog" aria-labelledby="wb-reveal-title" aria-modal="true">
+    <div class="wb-reveal-card">
+      <p class="eyebrow">Your first website</p>
+      <h2 id="wb-reveal-title">Your site is ready</h2>
+      <p>Before you open the editor, plan these three quick changes. They make the draft feel like yours right away.</p>
+      <ol class="wb-reveal-tasks">
+        <li><span aria-hidden="true">1</span><div><strong>Change the main headline</strong></div></li>
+        <li><span aria-hidden="true">2</span><div><strong>Replace one image</strong></div></li>
+        <li><span aria-hidden="true">3</span><div><strong>Preview mobile</strong></div></li>
+      </ol>
+      <div class="wb-reveal-actions">
+        <a class="wb-reveal-primary" data-wb-reveal-open href="#">Open in editor</a>
+        <a class="wb-reveal-secondary" href="{% url 'builder:workspace' %}">Back to workspace</a>
+      </div>
+      <p class="wb-reveal-note">We do not mark these tasks complete from here. Open the editor when you are ready.</p>
     </div>
   </div>
 </main>

@@ -1,13 +1,9 @@
 {% extends "builder/base_site.html" %}
 {% load static %}
 
-{% block title %}Workspace | Siaw{% endblock %}
+{% block title %}Workspace | WeBridge AI{% endblock %}
 {% block body_class %}page-workspace{% endblock %}
-{% block meta_description %}Your Siaw workspace: create with AI, import sites, and continue editing your projects.{% endblock %}
-
-{% block extra_head %}
-  <link rel="stylesheet" href="{% static 'builder/dashboard.css' %}?v=ai-stage-3">
-{% endblock %}
+{% block meta_description %}Your WeBridge AI workspace: create with AI, import sites, and continue editing your projects.{% endblock %}
 
 {% block scripts %}
   {{ block.super }}
@@ -19,7 +15,7 @@
   <section class="personal-workspace-hero wrap">
     <div class="personal-workspace-hero-copy">
       <p class="eyebrow">Workspace</p>
-      <h1>{{ user.get_username }}</h1>
+      <h1>Welcome back, {{ user.first_name|default:user.get_username }}</h1>
       <p class="personal-workspace-lead">Create, import, and open sites saved to your account.</p>
     </div>
     {% if usage %}
@@ -58,8 +54,16 @@
   </aside>
   {% endif %}
 
+  {% include "builder/partials/journey_progress.html" %}
+
+  {% if project_rows %}{% include "builder/partials/pre_editor_guidance.html" %}{% endif %}
+
   <section class="personal-workspace-body wrap" aria-label="Create and manage sites">
     {% include "builder/partials/workspace_tools.html" with detailed=True %}
+    <aside class="wb-help" aria-label="Help">
+      <strong>Need a starting point?</strong>
+      Use Create with AI for the guided path. Advanced import is available if you already own website files. Before opening the editor, plan to change the headline, replace one image, and preview mobile.
+    </aside>
   </section>
 </main>
 {% endblock %}

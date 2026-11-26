@@ -121,7 +121,7 @@ HERO_PHOTOS.forEach(function(p, i){{ track.appendChild(document.createElement('d
 
 class EditorWorkflowTests(TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.override.enable()
         self.user = _make_user("editor-user")
@@ -150,7 +150,11 @@ class EditorWorkflowTests(TestCase):
     def test_dashboard_and_editor_data(self):
         dashboard = self.client.get(reverse("builder:dashboard"))
         self.assertEqual(dashboard.status_code, 200)
-        self.assertContains(dashboard, "Test Website")
+        self.assertContains(dashboard, "WeBridge AI")
+
+        workspace = self.client.get(reverse("builder:workspace"))
+        self.assertEqual(workspace.status_code, 200)
+        self.assertContains(workspace, "Test Website")
 
         response = self.client.get(reverse("builder:editor_data", args=[self.project.id]))
         self.assertEqual(response.status_code, 200)
@@ -222,7 +226,7 @@ class EditorWorkflowTests(TestCase):
 
 class UploadSecurityTests(TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.override.enable()
         self.user = _make_user("upload-user")
@@ -349,7 +353,7 @@ class UploadSecurityTests(TestCase):
 
 class CompatibilityAndSmartManagerTests(TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.override.enable()
         self.user = _make_user("compat-user")
@@ -436,7 +440,7 @@ class CompatibilityAndSmartManagerTests(TestCase):
 
 class UniversalCompatibilityEngineTests(TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.override.enable()
         self.user = _make_user("universal-user")
@@ -508,7 +512,7 @@ class UniversalCompatibilityEngineTests(TestCase):
 
 class NavigationAndCaptureTests(TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.override.enable()
         self.user = _make_user("nav-user")
@@ -622,7 +626,7 @@ class NavigationAndCaptureTests(TestCase):
         info = detect_ssr_preview(project.source_dir, project.source_dir)
         self.assertIsNotNone(info)
         self.assertEqual(info.kind, "nitro")
-        self.assertTrue(str(info.server_script).endswith("dist/server/index.mjs"))
+        self.assertTrue(info.server_script.as_posix().endswith("dist/server/index.mjs"))
 
     def test_path_based_site_root_rewrites_vite_assets(self):
         project = self._project("Site Root", entry_file="dist/index.html")
@@ -642,6 +646,8 @@ class NavigationAndCaptureTests(TestCase):
             reverse("builder:runtime_site_asset", kwargs={"project_id": project.id, "asset_path": "assets/index-abc.js"})
         )
         self.assertEqual(asset_response.status_code, 200)
+        # Close the FileResponse so Windows can delete the temp MEDIA_ROOT in tearDown.
+        getattr(asset_response, "close", lambda: None)()
 
     def test_editor_template_includes_capture_panel(self):
         project = self._project("Capture UI")
@@ -654,7 +660,7 @@ class NavigationAndCaptureTests(TestCase):
 
 class Phase1TrustTests(TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.override.enable()
         self.user = _make_user("phase1-user")
@@ -763,7 +769,7 @@ class Phase1TrustTests(TestCase):
 
 class CaptureFidelityTests(TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.override = override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.override.enable()
         self.user = _make_user("capture-user")
@@ -925,7 +931,7 @@ class CaptureFidelityTests(TestCase):
 
 class AIWebsiteBuilderTests(TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.override = override_settings(
             MEDIA_ROOT=self.temp_dir.name,
             SIAW_AI_FORCE_OFFLINE=True,
@@ -957,7 +963,8 @@ class AIWebsiteBuilderTests(TestCase):
         self.assertContains(response, "Drop to replace")
         self.assertContains(response, "Start building now")
         self.assertContains(response, "data-hero-edit")
-        self.assertContains(response, "Prompt a site. Edit by hand.")
+        self.assertContains(response, "Create a professional business website with AI.")
+        self.assertContains(response, "WeBridge AI")
         self.assertContains(response, 'data-site-edit="hero.headline"')
         # Django runs tests with DEBUG=False, so local edit chrome stays off by default.
         self.assertNotContains(response, 'data-site-edit="1"')
@@ -1102,14 +1109,14 @@ class AIWebsiteBuilderTests(TestCase):
         self.assertContains(workspace, "Advanced: paste a prompt")
         dash = self.client.get(reverse("builder:dashboard"))
         self.assertNotContains(dash, "Start building now")
-        self.assertContains(dash, "Open AI Builder")
+        self.assertContains(dash, "Create my website")
 
     def test_signup_login_logout_and_pricing(self):
         from django.contrib.auth.models import User
 
         pricing = self.client.get(reverse("builder:pricing"))
         self.assertEqual(pricing.status_code, 200)
-        self.assertContains(pricing, "Pro")
+        self.assertContains(pricing, "Professional")
 
         signup = self.client.post(
             reverse("builder:signup"),
@@ -1430,7 +1437,7 @@ class AIWebsiteBuilderTests(TestCase):
 
 class MultiUserTenancyAndPlansTests(TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.override = override_settings(
             MEDIA_ROOT=self.temp_dir.name,
             SIAW_AI_FORCE_OFFLINE=True,
@@ -1485,8 +1492,10 @@ class MultiUserTenancyAndPlansTests(TestCase):
         css = self.client.get("/styles.css", HTTP_HOST=host)
         self.assertEqual(css.status_code, 200)
         self.assertIn(b"color:#111", b"".join(css.streaming_content))
+        getattr(css, "close", lambda: None)()
         js = self.client.get("/script.js", HTTP_HOST=host)
         self.assertEqual(js.status_code, 200)
+        getattr(js, "close", lambda: None)()
         html = self.client.get("/", HTTP_HOST=host)
         self.assertEqual(html.status_code, 404)
 
@@ -1601,7 +1610,7 @@ class MultiUserTenancyAndPlansTests(TestCase):
         self.assertTrue(WebsiteProject.objects.filter(owner=self.owner, name="Third", deleted_at__isnull=True).exists())
         workspace = self.client.get(reverse("builder:workspace"))
         self.assertEqual(workspace.status_code, 200)
-        self.assertContains(workspace, "Pro")
+        self.assertContains(workspace, "Professional")
 
 
 class ShopifyConnectTests(TestCase):

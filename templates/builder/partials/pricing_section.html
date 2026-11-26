@@ -1,20 +1,20 @@
 <section class="pricing-block" id="pricing" aria-label="Pricing">
   <div class="pricing-hero wrap">
     <p class="eyebrow" data-site-edit="pricing.eyebrow">Pricing</p>
-    <h2 class="pricing-title" data-site-edit="pricing.title">Clear pricing for every stage of the work.</h2>
-    <p class="pricing-lead" data-site-edit="pricing.lead">Start free to prompt and edit. Upgrade when you need more generations, unlimited projects, and studio seats.</p>
+    <h2 class="pricing-title" data-site-edit="pricing.title">Choose the level that fits your business.</h2>
+    <p class="pricing-lead" data-site-edit="pricing.lead">Start free and move up when you need more websites or AI-assisted creation. Paid-plan pricing will be confirmed before billing begins.</p>
   </div>
 
   <div class="pricing-grid wrap">
     <article class="price-plan" data-site-block="pricing:free">
       <p class="plan-name" data-site-edit="pricing.free.name">Free</p>
       <p class="plan-price"><span data-site-edit="pricing.free.price">$0</span> / month</p>
-      <p class="plan-blurb" data-site-edit="pricing.free.blurb">For trying the editor and shipping a first site.</p>
+      <p class="plan-blurb" data-site-edit="pricing.free.blurb">For creating and refining your first professional website.</p>
       <ul class="plan-features">
         <li>3 AI site generations / month</li>
         <li>2 active projects</li>
-        <li>Visual Safe Edit</li>
-        <li>HTML / ZIP import and export</li>
+        <li>Visual website editing</li>
+        <li>Responsive preview</li>
       </ul>
       {% if user.is_authenticated %}
         <a class="btn btn-line" data-site-edit="pricing.free.cta.auth" href="{% url 'builder:account' %}?plan=free#plan">Manage Free</a>
@@ -25,43 +25,43 @@
 
     <article class="price-plan is-featured" data-site-block="pricing:pro">
       <p class="plan-badge" data-site-edit="pricing.pro.badge">Most used</p>
-      <p class="plan-name" data-site-edit="pricing.pro.name">Pro</p>
-      <p class="plan-price"><span data-site-edit="pricing.pro.price">$29</span> / month</p>
-      <p class="plan-blurb" data-site-edit="pricing.pro.blurb">For freelancers shipping client sites every week.</p>
+      <p class="plan-name" data-site-edit="pricing.pro.name">Professional</p>
+      <p class="plan-price"><span data-site-edit="pricing.pro.price">Pilot pricing</span></p>
+      <p class="plan-blurb" data-site-edit="pricing.pro.blurb">For independent professionals managing an active business website.</p>
       <ul class="plan-features">
         <li>60 AI site generations / month</li>
         <li>Unlimited projects</li>
         <li>Multipage sites and page manager</li>
-        <li>Priority export validation</li>
-        <li>Email support</li>
+        <li>Responsive preview and project recovery</li>
+        <li>Higher monthly AI allowance</li>
       </ul>
       {% if user.is_authenticated %}
-        <a class="btn btn-primary" data-site-edit="pricing.pro.cta.auth" href="{% url 'builder:account' %}?plan=pro#plan">Upgrade to Pro</a>
+        <a class="btn btn-primary" data-site-edit="pricing.pro.cta.auth" href="{% url 'builder:account' %}?plan=pro#plan">Choose Professional</a>
       {% else %}
-        <a class="btn btn-primary" data-site-edit="pricing.pro.cta" href="{% url 'builder:signup' %}?next={% url 'builder:account' %}%3Fplan%3Dpro%23plan">Get Pro</a>
+        <a class="btn btn-primary" data-site-edit="pricing.pro.cta" href="{% url 'builder:signup' %}?next={% url 'builder:account' %}%3Fplan%3Dpro%23plan">Choose Professional</a>
       {% endif %}
     </article>
 
     <article class="price-plan" data-site-block="pricing:studio">
-      <p class="plan-name" data-site-edit="pricing.studio.name">Studio</p>
-      <p class="plan-price"><span data-site-edit="pricing.studio.price">$79</span> / month</p>
-      <p class="plan-blurb" data-site-edit="pricing.studio.blurb">For agencies running multiple brands in parallel.</p>
+      <p class="plan-name" data-site-edit="pricing.studio.name">Business</p>
+      <p class="plan-price"><span data-site-edit="pricing.studio.price">Pricing to be confirmed</span></p>
+      <p class="plan-blurb" data-site-edit="pricing.studio.blurb">For growing businesses that need more capacity across several websites.</p>
       <ul class="plan-features">
         <li>Unlimited AI generations</li>
-        <li>Team seats (up to 5)</li>
-        <li>Shared project library</li>
-        <li>Custom brand presets</li>
-        <li>Priority support</li>
+        <li>Unlimited active projects</li>
+        <li>Multipage website tools</li>
+        <li>Responsive preview and project recovery</li>
+        <li>Highest AI allowance in the MVP</li>
       </ul>
       {% if user.is_authenticated %}
-        <a class="btn btn-line" data-site-edit="pricing.studio.cta.auth" href="{% url 'builder:account' %}?plan=studio#plan">Upgrade to Studio</a>
+        <a class="btn btn-line" data-site-edit="pricing.studio.cta.auth" href="{% url 'builder:account' %}?plan=studio#plan">Choose Business</a>
       {% else %}
-        <a class="btn btn-line" data-site-edit="pricing.studio.cta" href="{% url 'builder:signup' %}?next={% url 'builder:account' %}%3Fplan%3Dstudio%23plan">Get Studio</a>
+        <a class="btn btn-line" data-site-edit="pricing.studio.cta" href="{% url 'builder:signup' %}?next={% url 'builder:account' %}%3Fplan%3Dstudio%23plan">Choose Business</a>
       {% endif %}
     </article>
   </div>
 
   <div class="pricing-note wrap">
-    <p>Billing is illustrative for this MVP. Plan limits are enforced now. Change your plan anytime from Account.</p>
+    <p>This MVP does not process payments. Plan limits are available for testing, and final prices, tax, renewal, domain inclusion, and cancellation terms will be shown before billing launches.</p>
   </div>
 </section>

@@ -1,8 +1,8 @@
 {% extends "builder/base_site.html" %}
 
-{% block title %}Account | Siaw{% endblock %}
+{% block title %}Account | WeBridge AI{% endblock %}
 {% block body_class %}page-account{% endblock %}
-{% block meta_description %}Manage your Siaw account, plan, password, and deleted projects.{% endblock %}
+{% block meta_description %}Manage your WeBridge AI account, plan, password, and deleted projects.{% endblock %}
 {% block site_footer %}{% endblock %}
 
 {% block scripts %}
@@ -74,7 +74,7 @@
                 <small>Updated {{ project.updated_at|date:"d M Y, H:i" }}</small>
               </div>
               <div class="account-project-actions">
-                <a class="account-open" href="{% url 'builder:editor' project.id %}?mode=safe">Open editor</a>
+                <a class="account-open" href="{% url 'builder:editor' project.id %}?mode=safe">Continue in editor</a>
                 <a class="account-open account-open-secondary" href="{% url 'builder:workspace' %}#projects">In workspace</a>
               </div>
             </li>
@@ -93,8 +93,8 @@
         {% endif %}
       </div>
       <p class="account-note">
-        Merchants normally install Siaw from Shopify Admin (Apps → Siaw), like other Shopify apps.
-        You can also link a store here to pull products into your Siaw account. The web builder still works for anyone, with or without Shopify.
+        Merchants normally install WeBridge AI from Shopify Admin (Apps → WeBridge AI), like other Shopify apps.
+        You can also link a store here to pull products into your WeBridge AI account. The web builder still works for anyone, with or without Shopify.
       </p>
       {% if shopify_shops %}
         <ul class="account-shopify-list">
@@ -191,7 +191,7 @@
 
       <section class="account-panel" id="plan">
         <h2>Plan</h2>
-        <p class="account-note">Billing is illustrative for this MVP. Switching plans updates your limits immediately.</p>
+        <p class="account-note">This MVP does not process payments. Switching plans changes test limits only; commercial terms will be shown before billing launches.</p>
         <form method="post" class="account-form" novalidate>
           {% csrf_token %}
           <input type="hidden" name="action" value="plan">

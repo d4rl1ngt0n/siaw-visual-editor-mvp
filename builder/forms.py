@@ -3,7 +3,7 @@ from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm as 
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 
-from .models import PLAN_CHOICES
+from .models import PLAN_FREE, PLAN_PRO, PLAN_STUDIO
 from .services.shopify.oauth import normalize_shop_domain
 
 
@@ -38,7 +38,14 @@ class PasswordChangeForm(DjangoPasswordChangeForm):
 
 
 class PlanChangeForm(forms.Form):
-    plan = forms.ChoiceField(choices=PLAN_CHOICES)
+    # Keep stable database keys while presenting the approved product names.
+    plan = forms.ChoiceField(
+        choices=(
+            (PLAN_FREE, "Free"),
+            (PLAN_PRO, "Professional"),
+            (PLAN_STUDIO, "Business"),
+        )
+    )
 
 
 class ShopifyConnectForm(forms.Form):

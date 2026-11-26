@@ -150,11 +150,33 @@
   function finishAndRedirect(url) {
     stopOverlayTimers();
     setPct(100);
-    setStatus("Opening in the editor…");
+    setStatus("Your website is ready…");
     setStage(stageEls.length - 1);
+    showFirstReveal(url);
+  }
+
+  function showFirstReveal(url) {
+    const reveal = document.querySelector("[data-wb-reveal]");
+    const openLink = document.querySelector("[data-wb-reveal-open]");
+    if (!reveal || !openLink) {
+      window.setTimeout(() => {
+        window.location.href = url;
+      }, 350);
+      return;
+    }
+    overlay.hidden = true;
+    overlay.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("is-generating");
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = defaultSubmitLabel;
+    }
+    openLink.setAttribute("href", url);
+    reveal.hidden = false;
+    reveal.setAttribute("aria-hidden", "false");
     window.setTimeout(() => {
-      window.location.href = url;
-    }, 350);
+      openLink.focus();
+    }, 50);
   }
 
   function updatePrefetchHint(payload) {

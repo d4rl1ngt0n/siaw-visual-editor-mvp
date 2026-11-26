@@ -1,7 +1,7 @@
 {% extends "builder/base_site.html" %}
 {% load static %}
 
-{% block title %}Siaw Visual Editor | Prompt, edit, and export websites{% endblock %}
+{% block title %}WeBridge AI | Create and publish a professional website{% endblock %}
 
 {% block scripts %}
   {{ block.super }}
@@ -10,78 +10,60 @@
 
 {% block content %}
   <main>
-    <section class="hero" aria-label="Siaw Visual Editor">
+    <section class="hero" aria-label="WeBridge AI">
       <div class="hero-atmosphere" aria-hidden="true"></div>
       <div class="hero-grid" aria-hidden="true"></div>
       <div class="hero-stage wrap">
         <div class="hero-inner">
-          <p class="brand-hero" data-site-edit="hero.brand">Siaw</p>
-          <div class="hero-edit-stage" data-hero-edit>
+          <p class="brand-hero" data-site-edit="hero.brand">WeBridge AI</p>
+          <div class="hero-edit-stage" data-hero-edit data-hero-edit-paused>
             <div class="hero-edit-chrome">
-              <span class="hero-edit-pill" data-site-edit="hero.pill">Safe Edit</span>
-              <span class="hero-edit-status" data-hero-edit-status>Click to edit</span>
+              <span class="hero-edit-pill" data-site-edit="hero.pill">Editing headline</span>
+              <span class="hero-edit-status" data-hero-edit-status>Selected text</span>
             </div>
             <h1 class="hero-headline">
-              <span class="hero-edit-line" data-hero-headline data-site-edit="hero.headline">Prompt a site. Edit by hand.</span><span class="hero-caret" data-hero-caret hidden aria-hidden="true"></span>
+              <span class="hero-edit-line" data-hero-headline data-site-edit="hero.headline">Create a professional business website with AI.</span><span class="hero-caret" data-hero-caret aria-hidden="true"></span>
             </h1>
-            <p class="lead" data-site-edit="hero.lead">AI drafts the page. You drag, rewrite, and ship.</p>
+            <p class="lead" data-site-edit="hero.lead">Describe what you do. WeBridge AI builds a complete website you can refine and publish.</p>
           </div>
           <div class="hero-actions">
             {% if user.is_authenticated %}
-              <a class="btn btn-ghost hero-action-btn is-secondary" href="#services" data-site-edit="hero.cta.secondary.auth">Explore services</a>
-              <a class="btn btn-primary hero-action-btn is-primary" href="{% url 'builder:ai_builder' %}" data-site-edit="hero.cta.primary.auth">Open AI Builder</a>
+              <a class="btn btn-primary hero-action-btn is-primary" href="{% url 'builder:ai_builder' %}" data-site-edit="hero.cta.primary.auth">Create my website</a>
+              <a class="btn btn-ghost hero-action-btn is-secondary" href="#how" data-site-edit="hero.cta.secondary.auth">See how it works</a>
             {% else %}
-              <a class="btn btn-ghost hero-action-btn is-secondary" href="#services" data-site-edit="hero.cta.secondary">Explore services</a>
-              <a class="btn btn-primary hero-action-btn is-primary" href="{% url 'builder:signup' %}" data-site-edit="hero.cta.primary">Start free</a>
+              <a class="btn btn-primary hero-action-btn is-primary" href="{% url 'builder:signup' %}" data-site-edit="hero.cta.primary">Create my website</a>
+              <a class="btn btn-ghost hero-action-btn is-secondary" href="#how" data-site-edit="hero.cta.secondary">See how it works</a>
             {% endif %}
             <div class="hero-guide-mouse" aria-hidden="true">
-              <svg class="hero-cursor-arrow" viewBox="0 0 32 32" width="32" height="32" fill="none">
-                <path d="M6 3.5v22.2l6.1-5.4 3.5 8.4 3.7-1.5-3.5-8.3L24.2 17 6 3.5z" fill="#fff" stroke="#141414" stroke-width="1.6" stroke-linejoin="round"/>
-              </svg>
-              <svg class="hero-cursor-grab" viewBox="0 0 32 32" width="32" height="32" fill="none">
-                <path d="M11.2 14.2V8.4a1.8 1.8 0 0 1 3.6 0v5.2M14.8 13.2V7.2a1.8 1.8 0 0 1 3.6 0v6.4M18.4 13.5V8.8a1.8 1.8 0 1 1 3.6 0v7.2M22 16.2v-2.4a1.8 1.8 0 0 1 3.6 0v5.2c0 4.2-2.8 7.4-7.2 7.4h-1.4c-3.4 0-5.6-1.4-7.2-3.8L8.2 19a2.2 2.2 0 0 1 3.2-3l2.2 2.1V14.2a1.8 1.8 0 0 1 3.6 0" fill="#fff" stroke="#141414" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <svg class="hero-cursor-arrow" viewBox="0 0 32 32" width="32" height="32" fill="none" aria-hidden="true">
+                <path d="M6 3.5v22.2l6.1-5.4 3.5 8.4 3.7-1.5-3.5-8.3L24.2 17 6 3.5z" fill="#fff" stroke="#1d1d1f" stroke-width="1.6" stroke-linejoin="round"/>
               </svg>
             </div>
           </div>
-          <p class="hero-trust" data-site-edit="hero.trust">AI draft · Visual editing · Import HTML · Export ZIP</p>
+          <p class="hero-trust" data-site-edit="hero.trust">Start free. No payment information required.</p>
         </div>
 
-        <div class="hero-demo" aria-hidden="true">
-          <div class="hero-demo-chrome">
-            <span></span><span></span><span></span>
-            <p>Safe Edit · drag images</p>
-          </div>
-          <div class="hero-demo-canvas">
-            <div class="hero-dropzone">
-              <img class="hero-drop-target" data-site-edit="hero.demo.image" src="https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=900&q=80" alt="">
-              <div class="hero-drop-ring">
-                <strong>Drop to replace</strong>
-                <span>Images, GIF, or JPG</span>
-              </div>
-            </div>
-            <div class="hero-drag-stack">
-              <figure class="hero-drag-card is-a">
-                <img data-site-edit="hero.demo.card.a" src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=500&q=80" alt="">
-                <figcaption>Drag</figcaption>
-              </figure>
-              <figure class="hero-drag-card is-b">
-                <img data-site-edit="hero.demo.card.b" src="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=500&q=80" alt="">
-                <figcaption>Drop</figcaption>
-              </figure>
-              <figure class="hero-drag-card is-c">
-                <img data-site-edit="hero.demo.card.c" src="https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80" alt="">
-                <figcaption>Swap</figcaption>
-              </figure>
-            </div>
-            <div class="hero-demo-mouse" aria-hidden="true">
-              <svg class="hero-cursor-arrow" viewBox="0 0 32 32" width="28" height="28" fill="none">
-                <path d="M6 3.5v22.2l6.1-5.4 3.5 8.4 3.7-1.5-3.5-8.3L24.2 17 6 3.5z" fill="#fff" stroke="#141414" stroke-width="1.6" stroke-linejoin="round"/>
-              </svg>
-              <svg class="hero-cursor-grab" viewBox="0 0 32 32" width="28" height="28" fill="none">
-                <path d="M11.2 14.2V8.4a1.8 1.8 0 0 1 3.6 0v5.2M14.8 13.2V7.2a1.8 1.8 0 0 1 3.6 0v6.4M18.4 13.5V8.8a1.8 1.8 0 1 1 3.6 0v7.2M22 16.2v-2.4a1.8 1.8 0 0 1 3.6 0v5.2c0 4.2-2.8 7.4-7.2 7.4h-1.4c-3.4 0-5.6-1.4-7.2-3.8L8.2 19a2.2 2.2 0 0 1 3.2-3l2.2 2.1V14.2a1.8 1.8 0 0 1 3.6 0" fill="#fff" stroke="#141414" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </div>
-          </div>
+        <div class="hero-demo hero-demo-media" data-wb-demo>
+          <video
+            class="hero-demo-video"
+            data-wb-demo-video
+            autoplay
+            muted
+            loop
+            playsinline
+            preload="metadata"
+            poster="{% static 'builder/media/webridge-editor-demo-poster.png' %}"
+            aria-label="WeBridge AI visual editor demo: edit text, drag and drop images, and scroll a website being built"
+          >
+            <source src="{% static 'builder/media/webridge-editor-demo.mp4' %}" type="video/mp4">
+          </video>
+          <img
+            class="hero-demo-still"
+            data-wb-demo-still
+            src="{% static 'builder/media/webridge-editor-demo-poster.png' %}"
+            alt="WeBridge AI visual editor showing a website being built with media drag and drop"
+            hidden
+          >
         </div>
       </div>
     </section>
@@ -93,7 +75,7 @@
     {% if not user.is_authenticated %}
     <section class="workspace wrap" id="workspace">
       <div class="workspace-intro">
-        <p class="eyebrow" data-site-edit="workspace.eyebrow">Workspace</p>
+        <p class="eyebrow" data-site-edit="workspace.eyebrow">Get started</p>
         <h2 data-site-edit="workspace.title">Start building now</h2>
         <p class="workspace-lead" data-site-edit="workspace.lead">Generate with AI, import a site, or continue a project you already started.</p>
       </div>

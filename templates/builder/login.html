@@ -1,8 +1,8 @@
 {% extends "builder/base_site.html" %}
 
-{% block title %}Log in | Siaw{% endblock %}
+{% block title %}Log in | WeBridge AI{% endblock %}
 {% block body_class %}page-auth{% endblock %}
-{% block meta_description %}Log in to Siaw Visual Editor to open your workspace and continue editing.{% endblock %}
+{% block meta_description %}Log in to WeBridge AI to open your workspace and continue building your website.{% endblock %}
 {% block top_nav %}
   <a class="btn-nav btn-nav-ghost" href="{% url 'builder:signup' %}?next=%2F%23workspace">Sign up</a>
 {% endblock %}
@@ -13,10 +13,10 @@
   <aside class="auth-visual" aria-hidden="true">
     <div class="auth-visual-glow"></div>
     <div class="auth-visual-card">
-      <p class="auth-visual-brand">Siaw</p>
-      <p class="auth-visual-line">Prompt a site.</p>
-      <p class="auth-visual-line">Edit by hand.</p>
-      <p class="auth-visual-line">Export clean HTML.</p>
+      <p class="auth-visual-brand">WeBridge AI</p>
+      <p class="auth-visual-line">Describe your business.</p>
+      <p class="auth-visual-line">Refine by hand.</p>
+      <p class="auth-visual-line">Publish when ready.</p>
       <div class="auth-visual-tiles">
         <img src="https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=600&q=80" alt="">
         <img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=600&q=80" alt="">
@@ -30,7 +30,7 @@
       <header class="auth-card-head">
         <p class="eyebrow">Welcome back</p>
         <h1>Log in</h1>
-        <p class="auth-lead">Continue editing your sites and export when you are ready.</p>
+        <p class="auth-lead">Continue your websites and pick up where you left off.</p>
       </header>
 
       {% if demo_account %}

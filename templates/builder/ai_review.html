@@ -4,34 +4,45 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Review your creative brief · Siaw</title>
-  <link rel="stylesheet" href="{% static 'builder/ai_workspace.css' %}?v=brief-8">
-  <link rel="stylesheet" href="{% static 'builder/ai_generate.css' %}?v=gen-2">
+  <title>Review your creative brief · WeBridge AI</title>
+  <script>
+    (function () {
+      var theme = "light";
+      try {
+        theme = localStorage.getItem("wb-theme")
+          || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      } catch (e) { /* default stays light */ }
+      document.documentElement.setAttribute("data-wb-theme", theme);
+    })();
+  </script>
+  <link rel="stylesheet" href="{% static 'builder/ai_workspace.css' %}?v=brief-14">
+  <link rel="stylesheet" href="{% static 'builder/ai_generate.css' %}?v=gen-3">
+  <link rel="stylesheet" href="{% static 'builder/webridge-app.css' %}?v=wb-8">
   <style>
-    .review-shell{width:min(1120px,92vw);margin:65px auto 100px}
-    .prefetch-hint{margin:0 0 20px;padding:14px 18px;border-radius:12px;background:#eef3f0;color:#2f4a3a;font-size:14px}
-    .prefetch-hint.is-ready{background:#eaf4ec;color:#285c37;font-weight:600}
+    .review-shell{width:min(980px,92vw);margin:65px auto 100px}
+    .prefetch-hint{margin:0 0 20px;padding:14px 18px;border-radius:18px;background:var(--wb-surface-2,#f5f5f7);color:var(--ink);font-size:14px}
+    .prefetch-hint.is-ready{background:var(--wb-success-soft,#e4f5e8);color:var(--wb-success,#248a3d);font-weight:600}
     .review-head{display:grid;grid-template-columns:1fr auto;gap:30px;align-items:end;margin-bottom:45px}
-    .review-head h1{font-size:clamp(45px,6vw,78px);line-height:.95;letter-spacing:-.06em;margin:0 0 16px}
+    .review-head h1{font-size:clamp(36px,5vw,48px);line-height:1.1;letter-spacing:-.02em;margin:0 0 16px;font-weight:600}
     .review-head p{color:var(--muted);font-size:17px}
     .review-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
-    .review-card{padding:28px;border:1px solid var(--line);border-radius:18px;background:#fff}
+    .review-card{padding:28px;border:1px solid var(--wb-line,rgba(0,0,0,.06));border-radius:18px;background:var(--surface)}
     .review-card.wide{grid-column:1/-1}
     .review-card header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
-    .review-card h2{font-size:20px;margin:0}
-    .review-card header a{color:var(--accent-dark);font-size:12px;font-weight:800}
+    .review-card h2{font-size:20px;margin:0;font-weight:600}
+    .review-card header a{color:var(--wb-link,#0071e3);font-size:14px;font-weight:400}
     .review-card dl{display:grid;grid-template-columns:140px 1fr;gap:11px;margin:0}
     .review-card dt{color:var(--muted);font-size:13px}
     .review-card dd{margin:0}
     .pill-list{display:flex;gap:8px;flex-wrap:wrap}
-    .pill-list span{padding:8px 11px;background:#f0f2ef;border-radius:999px;font-size:12px}
-    .missing{margin:20px 0;padding:20px;border-radius:14px;background:#fff3df;color:#704d16}
-    .missing.good{background:#eaf4ec;color:#285c37}
-    .generate-bar{margin-top:25px;padding:25px;display:flex;align-items:center;gap:25px;background:var(--ink);color:#fff;border-radius:20px}
+    .pill-list span{padding:8px 11px;background:var(--wb-surface-2,#f5f5f7);border-radius:980px;font-size:12px}
+    .missing{margin:20px 0;padding:20px;border-radius:18px;background:#fff4d6;color:#9a6700}
+    .missing.good{background:#e4f5e8;color:#248a3d}
+    .generate-bar{margin-top:25px;padding:25px;display:flex;align-items:center;gap:25px;background:#1d1d1f;color:#fff;border-radius:28px}
     .generate-bar div{margin-right:auto}
-    .generate-bar h2{margin:0 0 6px}
-    .generate-bar p{margin:0;color:#afb7b3}
-    .generate-bar .primary{background:var(--accent);white-space:nowrap}
+    .generate-bar h2{margin:0 0 6px;font-weight:600}
+    .generate-bar p{margin:0;color:#a1a1a6}
+    .generate-bar .primary{background:#0071e3;white-space:nowrap}
     .generate-bar .secondary{background:transparent;color:#fff;border-color:#505553}
     @media(max-width:700px){
       .review-head,.review-grid{grid-template-columns:1fr}
@@ -42,13 +53,18 @@
     }
   </style>
 </head>
-<body>
+<body class="wb-app">
+  <a class="wb-skip-link" href="#main-review">Skip to review</a>
   <header class="ai-topbar">
-    <a href="{% url 'builder:workspace' %}" class="brand"><span>S</span><strong>Siaw</strong></a>
+    <a href="{% url 'builder:workspace' %}" class="brand"><span>W</span><strong>WeBridge AI</strong></a>
     <div class="save-state">Creative brief</div>
+    <button type="button" class="wb-theme-toggle" data-wb-theme-toggle aria-label="Switch to dark mode" aria-pressed="false">
+      <svg class="wb-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M21.5 12h-2.2M4.7 12H2.5M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6M18.7 18.7l-1.6-1.6M6.9 6.9L5.3 5.3"/></svg>
+      <svg class="wb-icon-moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.6 14.8A8.6 8.6 0 0 1 9.2 3.4a.7.7 0 0 0-.9-.9 9.9 9.9 0 1 0 13.2 13.2.7.7 0 0 0-.9-.9Z"/></svg>
+    </button>
     <a class="exit-link" href="{% url 'builder:ai_wizard' brief.id %}">Edit answers</a>
   </header>
-  <main class="review-shell">
+  <main class="review-shell" id="main-review">
     <div class="review-head">
       <div>
         <p class="kicker">Ready to create</p>
@@ -145,7 +161,7 @@
     <div class="generate-bar">
       <div>
         <h2>Create the first version</h2>
-        <p>A complete editable website will open in the visual editor.</p>
+        <p>WeBridge AI will build a complete editable website. You will review next steps before opening the editor.</p>
       </div>
       <a class="secondary" href="{% url 'builder:ai_wizard' brief.id %}">Edit input</a>
       <form
@@ -155,7 +171,7 @@
         data-status-url="{% url 'builder:ai_build_status' brief.id %}"
       >
         {% csrf_token %}
-        <button class="primary" type="submit">Generate website ✦</button>
+        <button class="primary" type="submit">Generate website</button>
       </form>
     </div>
   </main>
@@ -195,12 +211,31 @@
         <li data-generate-stage>Structure planned</li>
         <li data-generate-stage>Pages and copy drafted</li>
         <li data-generate-stage>Design polished</li>
-        <li data-generate-stage>Opening in the editor</li>
+        <li data-generate-stage>Ready to review</li>
       </ul>
-      <p class="generate-note">Keep this tab open. We will take you to the editor when it is ready.</p>
+      <p class="generate-note">Keep this tab open. We will show your first website when it is ready.</p>
     </div>
   </div>
 
-  <script src="{% static 'builder/ai_generate.js' %}?v=gen-3"></script>
+  <div class="wb-reveal" data-wb-reveal hidden aria-hidden="true" role="dialog" aria-labelledby="wb-reveal-title" aria-modal="true">
+    <div class="wb-reveal-card">
+      <p class="eyebrow">Your first website</p>
+      <h2 id="wb-reveal-title">Your site is ready</h2>
+      <p>Before you open the editor, plan these three quick changes. They make the draft feel like yours right away.</p>
+      <ol class="wb-reveal-tasks">
+        <li><span aria-hidden="true">1</span><div><strong>Change the main headline</strong></div></li>
+        <li><span aria-hidden="true">2</span><div><strong>Replace one image</strong></div></li>
+        <li><span aria-hidden="true">3</span><div><strong>Preview mobile</strong></div></li>
+      </ol>
+      <div class="wb-reveal-actions">
+        <a class="wb-reveal-primary" data-wb-reveal-open href="#">Open in editor</a>
+        <a class="wb-reveal-secondary" href="{% url 'builder:workspace' %}">Back to workspace</a>
+      </div>
+      <p class="wb-reveal-note">We do not mark these tasks complete from here. Open the editor when you are ready.</p>
+    </div>
+  </div>
+
+  <script src="{% static 'builder/ai_generate.js' %}?v=gen-4"></script>
+  <script src="{% static 'builder/webridge-app.js' %}?v=wb-2" defer></script>
 </body>
 </html>
